@@ -46,7 +46,11 @@ MusicBrainz allows about one lookup per second, so the first upload of a big lib
 
 ## The iPhone Shortcut
 
-Build it once in the Shortcuts app:
+**Quick way:** open [`shortcut/Sync to Lidarr.shortcut`](shortcut/Sync%20to%20Lidarr.shortcut) on your iPhone and tap **Add Shortcut**. It asks for your `/ingest` URL and your token. It sends every album artist in your library; edit the **Find Music** action to narrow it down.
+
+(`shortcut/build.py` generates it; sign on a Mac with `shortcuts sign --mode anyone`.)
+
+**Or build it yourself** in the Shortcuts app:
 
 1. **Find Music**. Leave it as all music, or add a filter (for example a playlist, or **Is Loved** if your iOS version offers it) to send only part of your library.
 2. **Get Details of Music** → **Album Artist**. Album Artist avoids most "feat." credits; **Artist** also works.
