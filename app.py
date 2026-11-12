@@ -26,7 +26,7 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "1.0.1"  # MAJOR.MINOR.PATCH; the release tag must be v + this (CI checks)
+VERSION = "1.0.2"  # MAJOR.MINOR.PATCH; the release tag must be v + this (CI checks)
 TOKEN = os.environ.get("TOKEN", "")  # API token (Lidarr /list); generated and kept in state.json when unset
 RESET_ADMIN = os.environ.get("RESET_ADMIN", "").lower() in ("1", "true", "yes")
 SETUP_CODE = secrets.token_hex(4)  # printed to the log while no admin exists
