@@ -58,5 +58,40 @@ def test_password():
     assert app.session_for(app.state["admin"]) != before
 
 
+def test_totp():
+    secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"  # RFC 6238 test key "12345678901234567890"
+    assert app.totp_code(secret, 59 // 30) == "287082"            # RFC vector 94287082, 6 digits
+    assert app.totp_code(secret, 1111111109 // 30) == "081804"    # RFC vector 07081804
+    now = int(app.time.time() // 30)
+    good = app.totp_code(secret, now)
+    assert app.totp_step(secret, good) == now
+    assert app.totp_step(secret, good, after=now) is None          # replay refused
+    assert app.totp_step(secret, app.totp_code(secret, now - 3)) is None  # too old
+    a = {"totp": secret, "totp_last": 0}
+    codes = app.new_recovery_codes(a)
+    assert app.check_second_factor(a, codes[0].upper()) and not app.check_second_factor(a, codes[0])  # single use
+    assert app.check_second_factor(a, good) and not app.check_second_factor(a, good)
+    assert not app.check_second_factor(a, "") and not app.check_second_factor(a, "000000x")
+
+
+def test_cookies():
+    app.state["secret"] = "11" * 32
+    a = {"user": "me", "hash": "h"}
+    s1 = app.session_for(a)
+    a["totp"] = "ABC"
+    assert app.session_for(a) != s1                                # enabling 2FA signs other browsers out
+    assert app.pending_for(a, 100) != app.session_for(a).split(":")[1]
+
+
+def test_lockout():
+    app._fails.clear()
+    for _ in range(9):
+        app.record_failure()
+    assert not app.locked_out()
+    app.record_failure()
+    assert app.locked_out()
+    app._fails.clear()
+
+
 if __name__ == "__main__":
-    test_parse_names(); test_pick(); test_split(); test_users(); test_ingest_history(); test_password(); print("ok")
+    test_parse_names(); test_pick(); test_split(); test_users(); test_ingest_history(); test_password(); test_totp(); test_cookies(); test_lockout(); print("ok")

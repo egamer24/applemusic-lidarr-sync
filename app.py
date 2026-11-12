@@ -9,6 +9,7 @@ code and creates the admin account (username + password); the admin then adds
 users, issues their tokens and sees reports. Each user's phone uploads with its
 own token; /list (Lidarr) uses the API token and combines everyone.
 """
+import base64
 import hashlib
 import hmac
 import html
@@ -16,6 +17,7 @@ import json
 import os
 import re
 import secrets
+import struct
 import threading
 import time
 import unicodedata
@@ -90,10 +92,83 @@ def check_password(user: str, pw: str) -> bool:
     return hmac.compare_digest(hash_password(pw, a["salt"])["hash"].encode(), a["hash"].encode())
 
 
+def sign(msg: str) -> str:
+    return hmac.new(bytes.fromhex(state["secret"]), msg.encode(), hashlib.sha256).hexdigest()
+
+
 def session_for(a: dict) -> str:
-    """Cookie value; changes when the password does, which signs out other browsers."""
-    sig = hmac.new(bytes.fromhex(state["secret"]), f"{a['user']}|{a['hash']}".encode(), hashlib.sha256).hexdigest()
-    return f"{a['user']}:{sig}"
+    """Full sign-in cookie. Changes when the password or 2FA secret does, which signs out other browsers."""
+    user, pw, totp = a["user"], a["hash"], a.get("totp") or "-"
+    return f"{user}:{sign(f'session|{user}|{pw}|{totp}')}"
+
+
+def pending_for(a: dict, exp: int) -> str:
+    """Half-signed-in cookie between password and 2FA code. Only opens /login/2fa, for 5 minutes."""
+    user, pw = a["user"], a["hash"]
+    return f"{exp}:{sign(f'2fa|{user}|{pw}|{exp}')}"
+
+
+# ---------- two-factor (TOTP, RFC 6238: 6 digits, 30 s, SHA-1, what authenticator apps use) ----------
+
+def new_totp_secret() -> str:
+    return base64.b32encode(secrets.token_bytes(20)).decode().rstrip("=")
+
+
+def totp_code(secret: str, step: int) -> str:
+    key = base64.b32decode(secret + "=" * (-len(secret) % 8))
+    h = hmac.new(key, struct.pack(">Q", step), hashlib.sha1).digest()
+    o = h[-1] & 15
+    return f"{(int.from_bytes(h[o:o + 4], 'big') & 0x7FFFFFFF) % 1_000_000:06d}"
+
+
+def totp_step(secret: str, code: str, after: int = 0) -> int | None:
+    """The time step `code` is valid for (now ±30 s), if later than `after` (stops replays)."""
+    code = re.sub(r"\s", "", code)
+    if not secret or not re.fullmatch(r"\d{6}", code):
+        return None
+    now_step = int(time.time() // 30)
+    for step in (now_step - 1, now_step, now_step + 1):
+        if step > after and hmac.compare_digest(totp_code(secret, step), code):
+            return step
+    return None
+
+
+def check_second_factor(a: dict, code: str) -> bool:
+    """TOTP code or an unused recovery code. Consumes what it accepts. Call with lock held."""
+    step = totp_step(a.get("totp"), code, a.get("totp_last", 0))
+    if step:
+        a["totp_last"] = step
+        save()
+        return True
+    h = hash_token(re.sub(r"[\s-]", "", code).lower())
+    for i, c in enumerate(a.get("recovery", [])):
+        if hmac.compare_digest(c, h):
+            a["recovery"].pop(i)
+            save()
+            return True
+    return False
+
+
+def new_recovery_codes(a: dict) -> list[str]:
+    codes = [secrets.token_hex(5) for _ in range(8)]
+    a["recovery"] = [hash_token(c) for c in codes]
+    return [f"{c[:5]}-{c[5:]}" for c in codes]
+
+
+# ---------- sign-in throttling ----------
+
+_fails: list[float] = []
+
+
+def locked_out() -> bool:
+    """10 failed sign-in steps in 15 minutes locks sign-in for everyone until they age out."""
+    cutoff = time.time() - 900
+    _fails[:] = [t for t in _fails if t > cutoff]
+    return len(_fails) >= 10
+
+
+def record_failure():
+    _fails.append(time.time())
 
 
 # ---------- matching ----------
@@ -305,7 +380,9 @@ def dashboard(h) -> str:
  <button>Add user</button></form>
 <div class=mute style="margin-top:6px">Letters, digits, - and _. Each user gets their own token for their phone.</div></div>
 <div class=card><h2>Lidarr</h2>
-<p class=mute>Settings → Import Lists → + → Custom List, with this as the List URL. It combines every user.</p>
+<p class=mute>Settings → Import Lists → + → Custom List, with this as the List URL. It combines every user.
+The URL contains the API token: if Lidarr is on your LAN, swap the host for the container's LAN address
+(e.g. <code>http://192.168.x.x:8099</code>) so the token never passes through a reverse proxy's logs.</p>
 <div class=row><button class=ghost data-copy="{esc(lidarr_url)}">Copy Lidarr list URL</button>
 <a href="/list">View list JSON</a></div></div>
 <div class=card><h2>No match on MusicBrainz ({len(tot['unmatched'])})</h2>
@@ -395,15 +472,65 @@ def setup_page(error: str = "") -> str:
 <button>Create admin</button></form>""", error)
 
 
-def account_page(msg: str = "", ok: bool = False) -> str:
+def two_factor_page(error: str = "") -> str:
+    return auth_page("Two-factor code", """<h2>Two-factor code</h2>
+<p class=mute>Enter the 6-digit code from your authenticator app, or one of your recovery codes.</p>
+<form method=post action=/login/2fa class=stack>
+<label>Code<input name=code inputmode=numeric autocomplete=one-time-code required autofocus autocapitalize=none></label>
+<button>Verify</button></form><p><a href="/login">Start over</a></p>""", error)
+
+
+def codes_card(codes: list[str]) -> str:
+    items = "".join(f"<li><code>{esc(c)}</code></li>" for c in codes)
+    return f"""<div class=card><h2>Recovery codes</h2>
+<p class=warn>Shown only once. Save them somewhere safe; each one signs you in once if you lose your phone.</p>
+<ul class=cols>{items}</ul><div class=row style="margin-top:10px">
+<button class=ghost data-copy="{esc(chr(10).join(codes))}">Copy all</button></div></div>"""
+
+
+def account_page(msg: str = "", ok: bool = False, extra: str = "") -> str:
+    a = state["admin"]
     note = f"<p class={'ok' if ok else 'warn'}>{esc(msg)}</p>" if msg else ""
-    return page("Account", f"""{FORM_CSS}<p><a href="/">← Overview</a></p><div class=card style="max-width:480px">
-<h2>Change password</h2>{note}<p class=mute>Signed in as <b>{esc(state['admin']['user'])}</b>. Changing the password signs out every other browser.</p>
+    if a.get("totp"):
+        tfa = f"""<p><span class="pill ok">On</span> {len(a.get('recovery', []))} recovery codes left.</p>
+<form method=post action=/account/2fa/recovery class=stack>
+<label>Current code<input name=code inputmode=numeric autocomplete=one-time-code required></label>
+<button class=ghost>New recovery codes</button></form>
+<hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
+<form method=post action=/account/2fa/disable class=stack>
+<label>Password<input type=password name=password autocomplete=current-password required></label>
+<label>Code or recovery code<input name=code autocomplete=one-time-code required></label>
+<button class=danger>Turn off two-factor</button></form>"""
+    else:
+        tfa = """<p><span class="pill warn">Off</span> Add a 6-digit code from an authenticator app
+(iPhone Passwords, Google Authenticator, 1Password, …) to every sign-in.</p>
+<form method=post action=/account/2fa/start><button>Set up two-factor</button></form>"""
+    return page("Account", f"""{FORM_CSS}<p><a href="/">← Overview</a></p>{note}{extra}
+<div class=card style="max-width:520px"><h2>Two-factor sign-in</h2>{tfa}</div>
+<div class=card style="max-width:520px"><h2>Change password</h2>
+<p class=mute>Signed in as <b>{esc(a['user'])}</b>. Changing the password signs out every other browser.</p>
 <form method=post action=/account class=stack>
 <label>Current password<input type=password name=current autocomplete=current-password required></label>
 <label>New password (at least 10 characters)<input type=password name=password autocomplete=new-password minlength=10 required></label>
 <label>Repeat new password<input type=password name=password2 autocomplete=new-password minlength=10 required></label>
 <button>Change password</button></form></div>""")
+
+
+def totp_setup_card(user: str, secret: str, error: str = "") -> str:
+    issuer = "AppleMusic-Lidarr"
+    uri = f"otpauth://totp/{issuer}:{urllib.parse.quote(user)}?" + urllib.parse.urlencode(
+        {"secret": secret, "issuer": issuer, "algorithm": "SHA1", "digits": 6, "period": 30})
+    grouped = " ".join(secret[i:i + 4] for i in range(0, len(secret), 4))
+    err = f"<p class=warn>{esc(error)}</p>" if error else ""
+    return f"""<div class=card style="max-width:520px"><h2>Set up two-factor</h2>{err}
+<ol><li>On this iPhone: <a href="{esc(uri)}">add to Passwords / authenticator app</a>.<br>
+Anywhere else: add an account in your authenticator app and enter this key:
+<div class=secret style="margin:6px 0">{esc(grouped)}</div>
+<button class=ghost data-copy="{esc(secret)}">Copy key</button></li>
+<li>Enter the 6-digit code it shows.</li></ol>
+<form method=post action=/account/2fa/enable class=stack>
+<label>Code<input name=code inputmode=numeric autocomplete=one-time-code required autofocus></label>
+<button>Turn on two-factor</button></form></div>"""
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -417,23 +544,44 @@ class Handler(BaseHTTPRequestHandler):
     def is_admin_token(self, t: str) -> bool:
         return bool(TOKEN) and hmac.compare_digest(t.encode(), TOKEN.encode())
 
-    def is_admin(self) -> bool:
-        """Signed in to the web GUI (session cookie)."""
-        with lock:
-            a = state.get("admin")
-            want = session_for(a) if a else None
-        if not want:
-            return False
+    def cookie(self, name: str) -> str:
         for part in self.headers.get("Cookie", "").split(";"):
             k, _, v = part.strip().partition("=")
-            if k == "amls" and hmac.compare_digest(v.encode(), want.encode()):
-                return True
-        return False
+            if k == name:
+                return v
+        return ""
+
+    def set_cookie(self, name: str, value: str, max_age: int) -> str:
+        secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
+        return f"{name}={value}; Path=/; HttpOnly; SameSite=Strict; Max-Age={max_age}{secure}"
+
+    def is_admin(self) -> bool:
+        """Fully signed in to the web GUI (password and, when on, 2FA)."""
+        with lock:
+            a = state.get("admin")
+            want = session_for(a) if a else ""
+        return bool(want) and hmac.compare_digest(self.cookie("amls").encode(), want.encode())
+
+    def is_pending(self) -> bool:
+        """Password accepted, waiting for the 2FA code (5 minutes)."""
+        exp, _, _ = self.cookie("amls2fa").partition(":")
+        with lock:
+            a = state.get("admin")
+            if not (a and a.get("totp") and exp.isdigit() and int(exp) > time.time()):
+                return False
+            want = pending_for(a, int(exp))
+        return hmac.compare_digest(self.cookie("amls2fa").encode(), want.encode())
+
+    def session_cookies(self) -> list[str]:
+        return [self.set_cookie("amls", session_for(state["admin"]), 2592000), self.set_cookie("amls2fa", "", 0)]
 
     def sign_in(self, to: str = "/"):
-        secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
-        cookie = f"amls={session_for(state['admin'])}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000{secure}"
-        self.redirect(to, {"Set-Cookie": cookie})
+        self.redirect(to, {"Set-Cookie": self.session_cookies()})
+
+    def failed(self, body: str):
+        record_failure()
+        time.sleep(1)  # slow down guessing
+        self.html(body, 401)
 
     def send(self, code: int, body, ctype="application/json", headers: dict | None = None):
         data = body if isinstance(body, bytes) else (body if isinstance(body, str) else json.dumps(body)).encode()
@@ -442,7 +590,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         for k, v in (headers or {}).items():
-            self.send_header(k, v)
+            for one in v if isinstance(v, list) else [v]:
+                self.send_header(k, one)
         self.end_headers()
         self.wfile.write(data)
 
@@ -474,6 +623,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, [{"MusicBrainzId": i} for i in mbids()])
         if "admin" not in state:
             return self.html(setup_page()) if path == "/setup" else self.redirect("/setup")
+        if path == "/login/2fa":
+            return self.html(two_factor_page()) if self.is_pending() else self.redirect("/login")
         if path in ("/login", "/setup"):
             return self.redirect("/") if self.is_admin() else self.html(login_page())
         if not self.is_admin():
@@ -491,6 +642,10 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         if path == "/ingest":
             return self.do_ingest()
+        if "admin" not in state and path != "/setup":
+            return self.redirect("/setup")
+        if path in ("/setup", "/login", "/login/2fa") and locked_out():
+            return self.html(auth_page("Locked", "<p>Too many failed attempts. Try again in 15 minutes.</p>"), 429)
         if path == "/setup":
             f = self.form()
             with lock:
@@ -503,9 +658,14 @@ class Handler(BaseHTTPRequestHandler):
                        else "Username: 1–64 letters, digits, . _ - or @." if not re.fullmatch(r"[a-z0-9_.@-]{1,64}", user)
                        else "Password must be at least 10 characters." if len(pw) < 10
                        else "Passwords don't match." if pw != f.get("password2", "") else "")
-                if err:
-                    time.sleep(1)
-                    return self.html(setup_page(err), 400)
+                if err == "Wrong setup code.":
+                    record_failure()
+            if err:
+                time.sleep(1)
+                return self.html(setup_page(err), 400)
+            with lock:
+                if "admin" in state:
+                    return self.redirect("/login")
                 state["admin"] = {"user": user, **hash_password(pw)}
                 save()
             print(f"admin account '{user}' created", flush=True)
@@ -514,10 +674,19 @@ class Handler(BaseHTTPRequestHandler):
             f = self.form()
             with lock:
                 ok = check_password(f.get("user", "").strip(), f.get("password", ""))
-            if ok:
-                return self.sign_in()
-            time.sleep(1)  # slow down guessing
-            return self.html(login_page("Wrong username or password."), 401)
+                a = state["admin"]
+                pending = pending_for(a, int(time.time()) + 300) if ok and a.get("totp") else ""
+            if not ok:
+                return self.failed(login_page("Wrong username or password."))
+            if pending:
+                return self.redirect("/login/2fa", {"Set-Cookie": self.set_cookie("amls2fa", pending, 300)})
+            return self.sign_in()
+        if path == "/login/2fa":
+            if not self.is_pending():
+                return self.redirect("/login")
+            with lock:
+                ok = check_second_factor(state["admin"], self.form().get("code", ""))
+            return self.sign_in() if ok else self.failed(two_factor_page("That code didn't work."))
         if path == "/logout":
             return self.redirect("/login", {"Set-Cookie": "amls=; Path=/; Max-Age=0"})
         if not self.is_admin():
@@ -534,6 +703,8 @@ class Handler(BaseHTTPRequestHandler):
                 a.update(hash_password(pw))
                 save()
             return self.sign_in("/account?changed=1")
+        if path.startswith("/account/2fa/"):
+            return self.two_factor_settings(path.rsplit("/", 1)[1], self.form())
         if path == "/users":
             user = self.form().get("user", "").strip().casefold()
             if not USER.match(user):
@@ -554,6 +725,40 @@ class Handler(BaseHTTPRequestHandler):
                     save()
             return self.redirect("/") if action == "delete" else self.new_token(user)
         self.send(404, {"error": "not found"})
+
+    def two_factor_settings(self, action: str, f: dict):
+        with lock:
+            a = state["admin"]
+            code = f.get("code", "")
+            if action == "start":
+                a["totp_pending"] = new_totp_secret()
+                save()
+                return self.html(account_page(extra=totp_setup_card(a["user"], a["totp_pending"])))
+            if action == "enable":
+                step = totp_step(a.get("totp_pending"), code)
+                if not step:
+                    return self.html(account_page(extra=totp_setup_card(a["user"], a.get("totp_pending") or new_totp_secret(),
+                                                                       "That code didn't match. Check the phone's clock and try the next code.")), 400)
+                a["totp"], a["totp_last"] = a.pop("totp_pending"), step
+                codes = new_recovery_codes(a)
+                save()
+                return self.html(account_page("Two-factor is on.", True, codes_card(codes)), headers={"Set-Cookie": self.session_cookies()})
+            if action == "recovery" and a.get("totp"):
+                step = totp_step(a["totp"], code, a.get("totp_last", 0))
+                if not step:
+                    return self.html(account_page("That code didn't work."), 400)
+                a["totp_last"] = step
+                codes = new_recovery_codes(a)
+                save()
+                return self.html(account_page("New recovery codes made; the old ones no longer work.", True, codes_card(codes)))
+            if action == "disable" and a.get("totp"):
+                if not (check_password(a["user"], f.get("password", "")) and check_second_factor(a, code)):
+                    return self.html(account_page("Password or code is wrong."), 400)
+                for k in ("totp", "totp_last", "recovery", "totp_pending"):
+                    a.pop(k, None)
+                save()
+                return self.html(account_page("Two-factor is off."), headers={"Set-Cookie": self.session_cookies()})
+        self.redirect("/account")
 
     def new_token(self, user: str):
         t = secrets.token_hex(24)
@@ -591,7 +796,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    os.umask(0o077)  # state.json holds password hash, 2FA secret and signing key
     os.makedirs(DATA, exist_ok=True)
+    if os.path.exists(STATE_FILE):
+        os.chmod(STATE_FILE, 0o600)
     load()
     state.setdefault("secret", secrets.token_hex(32))
     if not TOKEN:

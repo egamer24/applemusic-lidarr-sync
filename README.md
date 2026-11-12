@@ -38,6 +38,14 @@ services:
 
 On first visit the GUI asks you to **set up an admin account** (username + password). Setup also asks for a **setup code** so nobody else can claim the admin account first: it's printed in the container log (`docker logs applemusic-lidarr-sync`), or use your `TOKEN`. After that you sign in with the username and password; **Account** changes the password (and signs out other browsers).
 
+**Two-factor sign-in** (Account → Set up two-factor): standard 6-digit authenticator codes (TOTP: iPhone Passwords, Google Authenticator, 1Password, …) plus 8 one-time recovery codes. Each code works once. Ten failed sign-in steps in 15 minutes lock sign-in for 15 minutes. Lost both phone and recovery codes? Set `RESET_ADMIN=true`, restart, and set up again.
+
+**Security notes**
+
+- `state.json` (mode 600) holds the password hash, the 2FA secret and the cookie signing key. Back it up like a password file.
+- User tokens are stored only as SHA-256 hashes and shown once.
+- The Lidarr list URL carries the API token in its query string, so give Lidarr the container's **LAN** address; through a reverse proxy the token would be written to the proxy's access log.
+
 From there you can:
 
 - **Add users.** Each gets a personal token, shown once with copy buttons. Regenerate or delete it any time.
