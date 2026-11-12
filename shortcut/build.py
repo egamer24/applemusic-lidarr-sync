@@ -3,11 +3,15 @@ shortcuts sign --mode anyone -i shortcut/unsigned.shortcut -o "shortcut/Sync to 
 """
 import plistlib, uuid, os
 
-TOKEN, COMBINED = str(uuid.uuid4()).upper(), str(uuid.uuid4()).upper()
+TOKEN, FIND, ARTISTS, COMBINED = (str(uuid.uuid4()).upper() for _ in range(4))
 
 
 def out(u, name):
     return {"OutputUUID": u, "Type": "ActionOutput", "OutputName": name}
+
+
+def var(u, name):
+    return {"Value": out(u, name), "WFSerializationType": "WFTextTokenAttachment"}
 
 
 def text(s, attachments=None):
@@ -20,20 +24,20 @@ actions = [
      "WFWorkflowActionParameters": {"UUID": TOKEN, "WFTextActionText": text("PASTE-TOKEN-HERE")}},
     # 1: all music in the library (add a filter in the Shortcuts app to narrow it)
     {"WFWorkflowActionIdentifier": "is.workflow.actions.filter.music",
-     "WFWorkflowActionParameters": {}},
+     "WFWorkflowActionParameters": {"UUID": FIND}},
     # 2: album artist of each song
     {"WFWorkflowActionIdentifier": "is.workflow.actions.properties.music",
-     "WFWorkflowActionParameters": {"WFContentItemPropertyName": "Album Artist"}},
+     "WFWorkflowActionParameters": {"UUID": ARTISTS, "WFInput": var(FIND, "Music"), "WFContentItemPropertyName": "Album Artist"}},
     # 3: one per line
     {"WFWorkflowActionIdentifier": "is.workflow.actions.text.combine",
-     "WFWorkflowActionParameters": {"UUID": COMBINED, "WFTextSeparator": "New Lines"}},
+     "WFWorkflowActionParameters": {"UUID": COMBINED, "text": var(ARTISTS, "Album Artist"), "WFTextSeparator": "New Lines"}},
     # 4: POST to /ingest (URL asked on import)
     {"WFWorkflowActionIdentifier": "is.workflow.actions.downloadurl",
      "WFWorkflowActionParameters": {
          "WFURL": "https://your-host/ingest",
          "WFHTTPMethod": "POST",
          "WFHTTPBodyType": "File",
-         "WFRequestVariable": {"Value": out(COMBINED, "Combined Text"), "WFSerializationType": "WFTextTokenAttachment"},
+         "WFRequestVariable": var(COMBINED, "Combined Text"),
          "ShowHeaders": True,
          "WFHTTPHeaders": {"Value": {"WFDictionaryFieldValueItems": [{
              "WFItemType": 0,

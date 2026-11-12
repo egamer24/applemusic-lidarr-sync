@@ -175,9 +175,11 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         if length > 20_000_000:
             return self.send(413, {"error": "too large"})
-        names = parse_names(self.rfile.read(length), self.headers.get("Content-Type", ""))
+        body, ctype = self.rfile.read(length), self.headers.get("Content-Type", "")
+        names = parse_names(body, ctype)
         if not names:
-            return self.send(400, {"error": "no artist names in body"})
+            print(f"empty ingest: {length} bytes, {ctype!r}, starts {body[:80]!r}", flush=True)
+            return self.send(400, {"error": "no artist names in body", "bytes": length, "content_type": ctype})
         with lock:
             state["names"] = names
             state["last_ingest"] = time.strftime("%Y-%m-%d %H:%M:%S")
