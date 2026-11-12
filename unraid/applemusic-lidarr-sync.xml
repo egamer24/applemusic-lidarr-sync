@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>applemusic-lidarr-sync</Name>
+  <Repository>ghcr.io/egamer24/applemusic-lidarr-sync:latest</Repository>
+  <Registry>https://github.com/egamer24/applemusic-lidarr-sync/pkgs/container/applemusic-lidarr-sync</Registry>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/egamer24/applemusic-lidarr-sync/issues</Support>
+  <Project>https://github.com/egamer24/applemusic-lidarr-sync</Project>
+  <Overview>Keep Lidarr following the artists in your Apple Music library. An iPhone Shortcut sends your library's artist names to this container every night; it matches them on MusicBrainz and serves them to Lidarr as a Custom List. No Mac, no Apple Developer account, nothing signs in to your Apple ID. Several people can share one server. Web admin with first-run setup, password + optional two-factor, per-person reports.[br][br]Before the first start, make the appdata folder writable by the container (it runs as uid 1000):[br]mkdir -p /mnt/user/appdata/applemusic-lidarr-sync &amp;&amp; chown 1000:1000 /mnt/user/appdata/applemusic-lidarr-sync[br][br]Then open the WebUI and create the admin account with the setup code from the container log.</Overview>
+  <Category>MediaApp:Music Tools:</Category>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <Icon>https://raw.githubusercontent.com/egamer24/applemusic-lidarr-sync/main/docs/icon.png</Icon>
+  <ExtraParams/>
+  <PostArgs/>
+  <Config Name="WebUI / API port" Target="8080" Default="8099" Mode="tcp" Description="Web admin, /ingest for phones, /list for Lidarr" Type="Port" Display="always" Required="true" Mask="false">8099</Config>
+  <Config Name="Data" Target="/data" Default="/mnt/user/appdata/applemusic-lidarr-sync" Mode="rw" Description="state.json: users, artist lists, lookup cache, admin account (keep it backed up)" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/applemusic-lidarr-sync</Config>
+  <Config Name="API token" Target="TOKEN" Default="" Mode="" Description="Optional. Token for Lidarr's list URL. Leave empty to have one generated (the dashboard shows the full Lidarr URL)" Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="Reset admin" Target="RESET_ADMIN" Default="" Mode="" Description="Set to true and restart to run setup again (forgotten password). Remove afterwards" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+</Container>

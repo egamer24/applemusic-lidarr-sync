@@ -59,6 +59,8 @@ volumes:
 
 Prefer a host folder? Use `./data:/data` and `chown 1000:1000 ./data` first (the app runs as uid 1000).
 
+**Unraid:** a template is in [`unraid/applemusic-lidarr-sync.xml`](unraid/applemusic-lidarr-sync.xml) (Docker → Add Container → Template URL: `https://raw.githubusercontent.com/egamer24/applemusic-lidarr-sync/main/unraid/applemusic-lidarr-sync.xml`). Create and `chown 1000:1000` the appdata folder before the first start.
+
 | Variable | Default | |
 |---|---|---|
 | `TOKEN` | generated | API token for Lidarr's `/list` (and admin uploads). If unset, one is generated and stored in `state.json`; the GUI shows the full Lidarr URL either way |
