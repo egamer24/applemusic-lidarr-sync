@@ -1,9 +1,12 @@
-"""Build the unsigned Shortcut. Sign on a Mac with:
+"""Build the unsigned Shortcuts. Sign on a Mac with:
 shortcuts sign --mode anyone -i shortcut/unsigned.shortcut -o "shortcut/Sync to Lidarr.shortcut"
+shortcuts sign --mode anyone -i shortcut/unsigned-albums.shortcut -o "shortcut/Sync to Lidarr (albums).shortcut"
+The albums version sends one "Album Artist<TAB>Album" line per song instead of just the artist.
 """
 import plistlib, uuid, os
 
-SETUP, SPLIT, URL, TOKEN, FIND, ARTISTS, COMBINED = (str(uuid.uuid4()).upper() for _ in range(7))
+SETUP, SPLIT, URL, TOKEN, FIND, ARTISTS, COMBINED, LINE, REPEAT = (str(uuid.uuid4()).upper() for _ in range(9))
+GROUP = str(uuid.uuid4()).upper()
 
 
 def out(u, name):
@@ -18,7 +21,13 @@ def text(s, attachments=None):
     return {"Value": {"string": s, "attachmentsByRange": attachments or {}}, "WFSerializationType": "WFTextTokenString"}
 
 
-actions = [
+def song(prop):
+    return {"Type": "Variable", "VariableName": "Repeat Item", "Aggrandizements": [
+        {"Type": "WFCoercionVariableAggrandizement", "CoercionItemClass": "WFMPMediaItemContentItem"},
+        {"Type": "WFPropertyVariableAggrandizement", "PropertyName": prop}]}
+
+
+setup = [
     # 0: setup code from the admin page, "<url>/ingest <token>" (asked on import)
     {"WFWorkflowActionIdentifier": "is.workflow.actions.gettext",
      "WFWorkflowActionParameters": {"UUID": SETUP, "WFTextActionText": text("PASTE-SETUP-CODE-HERE")}},
@@ -32,13 +41,28 @@ actions = [
     # 4: all music in the library (add a filter in the Shortcuts app to narrow it)
     {"WFWorkflowActionIdentifier": "is.workflow.actions.filter.music",
      "WFWorkflowActionParameters": {"UUID": FIND}},
+]
+artists = [
     # 5: album artist of each song
     {"WFWorkflowActionIdentifier": "is.workflow.actions.properties.music",
      "WFWorkflowActionParameters": {"UUID": ARTISTS, "WFInput": var(FIND, "Music"), "WFContentItemPropertyName": "Album Artist"}},
     # 6: one per line
     {"WFWorkflowActionIdentifier": "is.workflow.actions.text.combine",
      "WFWorkflowActionParameters": {"UUID": COMBINED, "text": var(ARTISTS, "Album Artist"), "WFTextSeparator": "New Lines"}},
-    # 7: POST to the URL from the setup code, with its token
+]
+albums = [
+    # 5-7: "Album Artist<TAB>Album" for each song, one per line
+    {"WFWorkflowActionIdentifier": "is.workflow.actions.repeat.each",
+     "WFWorkflowActionParameters": {"GroupingIdentifier": GROUP, "WFControlFlowMode": 0, "WFInput": var(FIND, "Music")}},
+    {"WFWorkflowActionIdentifier": "is.workflow.actions.gettext",
+     "WFWorkflowActionParameters": {"UUID": LINE, "WFTextActionText": text("\ufffc\t\ufffc", {"{0, 1}": song("Album Artist"), "{2, 1}": song("Album")})}},
+    {"WFWorkflowActionIdentifier": "is.workflow.actions.repeat.each",
+     "WFWorkflowActionParameters": {"GroupingIdentifier": GROUP, "WFControlFlowMode": 2, "UUID": REPEAT}},
+    {"WFWorkflowActionIdentifier": "is.workflow.actions.text.combine",
+     "WFWorkflowActionParameters": {"UUID": COMBINED, "text": var(REPEAT, "Repeat Results"), "WFTextSeparator": "New Lines"}},
+]
+post = [
+    # POST to the URL from the setup code, with its token
     {"WFWorkflowActionIdentifier": "is.workflow.actions.downloadurl",
      "WFWorkflowActionParameters": {
          "WFURL": text("\ufffc", {"{0, 1}": out(URL, "Item from List")}),
@@ -54,7 +78,8 @@ actions = [
      }},
 ]
 
-shortcut = {
+def shortcut(actions):
+    return {
     "WFWorkflowClientVersion": "2607.0.2",
     "WFWorkflowMinimumClientVersion": 900,
     "WFWorkflowMinimumClientVersionString": "900",
@@ -70,7 +95,9 @@ shortcut = {
     "WFWorkflowActions": actions,
 }
 
+
 here = os.path.dirname(os.path.abspath(__file__))
-with open(os.path.join(here, "unsigned.shortcut"), "wb") as f:
-    plistlib.dump(shortcut, f, fmt=plistlib.FMT_BINARY)
-print("wrote unsigned.shortcut")
+for name, middle in (("unsigned.shortcut", artists), ("unsigned-albums.shortcut", albums)):
+    with open(os.path.join(here, name), "wb") as f:
+        plistlib.dump(shortcut(setup + middle + post), f, fmt=plistlib.FMT_BINARY)
+    print("wrote", name)

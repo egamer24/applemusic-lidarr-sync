@@ -167,6 +167,7 @@ From there you can:
 | `GET /list` | API token (or signed in) | Lidarr Custom List JSON, every user combined |
 | `GET /` | signed in | Web GUI (`/setup` on first run, `/login`, `/account`) |
 | `GET /shortcut` | none | The iPhone Shortcut |
+| `GET /shortcut/albums` | none | The album version of the Shortcut ([album sync](#only-the-albums-you-have-optional)) |
 | `GET /healthz` | none | Health check |
 
 Tokens go in `Authorization: Bearer <token>` or `?token=<token>`.
@@ -219,7 +220,7 @@ Caddy, exposing only what phones need and keeping the rest LAN-only:
 
 ```caddyfile
 music.example.com {
-    @phones path /ingest /shortcut /healthz
+    @phones path /ingest /shortcut /shortcut/albums /healthz
     handle @phones {
         reverse_proxy applemusic-lidarr-sync:8080
     }
@@ -234,7 +235,7 @@ music.example.com {
 Plain nginx (or Nginx Proxy Manager's **Advanced** tab), same idea:
 
 ```nginx
-location ~ ^/(ingest|shortcut|healthz)$ {
+location ~ ^/(ingest|shortcut|shortcut/albums|healthz)$ {
     proxy_pass http://applemusic-lidarr-sync:8080;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto $scheme;
@@ -276,7 +277,7 @@ Add each person in the web GUI and give them their own token. An upload only rep
 
 **Quick way:** on your iPhone, open the **[iCloud link](https://www.icloud.com/shortcuts/a183b4816810410580e26dd8f32e3818)** and tap **Add Shortcut**. The same Shortcut is in the repo ([`shortcut/Sync to Lidarr.shortcut`](shortcut/Sync%20to%20Lidarr.shortcut)) and served by your own container at `/shortcut`. It asks for one thing: your **setup code** from the web GUI (`<url>/ingest <token>`), and splits it into the address and token itself. It sends every album artist in your library; edit the **Find Music** action to narrow it down.
 
-(`shortcut/build.py` generates it; sign on a Mac with `shortcuts sign --mode anyone`.)
+(`shortcut/build.py` generates it and the [album version](#only-the-albums-you-have-optional); sign on a Mac with `shortcuts sign --mode anyone`.)
 
 <details>
 <summary><strong>Or build it yourself in the Shortcuts app</strong></summary>
@@ -311,6 +312,22 @@ The phone has to reach `/ingest` when the automation runs; see [Access and remot
 - Pick the root folder, quality profile and monitoring you want for new artists.
 
 Lidarr refreshes custom lists every 6 hours at most. Removing an artist from your library drops it from the list but doesn't delete it from Lidarr unless you set Lidarr's "List Clean Library Level".
+
+### Only the albums you have (optional)
+
+By default Lidarr gets artists, and monitors their albums the way the import list's **Monitor** setting says (usually all of them). Album sync is off unless you turn it on. When it's on, Lidarr monitors only the albums that are in your Apple Music library:
+
+1. In the web GUI, open **Settings → Albums**. Tick **Only monitor albums in the library**, then enter your Lidarr URL and API key (Lidarr → Settings → General).
+2. In Lidarr, set the Apple Music import list's **Monitor** to **None**. That way new artists don't start out with every album monitored.
+3. On the iPhone, install the **album version** of the Shortcut from `http://<host>:8099/shortcut/albums` and paste your setup code. Use it in your automation instead of the regular one. It sends `Album Artist<TAB>Album` for every song, which takes a little longer on big libraries.
+
+Once an hour, the app does this for each artist that has at least one album matched in Lidarr:
+- It monitors the artist and your albums, and starts a search for any it just monitored.
+- It unmonitors the artist's other albums. Albums that already have files in Lidarr stay monitored.
+
+It leaves artists alone when none of their albums match, and it does nothing at all for people still on the regular Shortcut, so you can switch one phone at a time. The Settings page lists library albums it couldn't find in Lidarr. These are mostly singles and EPs, which Lidarr only lists if your metadata profile includes them.
+
+Titles are compared exactly first. Only when that fails does it compare loosely, ignoring `(Deluxe Edition)`, `[Remastered]`, ` - Single` and similar endings. Turning album sync off again changes nothing in Lidarr; it just stops adjusting.
 
 ## Limits
 

@@ -2,6 +2,11 @@
 
 Versions follow [semantic versioning](https://semver.org): **patch** (1.0.**1**) for fixes, docs and packaging; **minor** (1.**1**.0) for new features that don't change existing setups; **major** (**2**.0.0) for changes that need you to change your setup. Each release is published as `ghcr.io/egamer24/applemusic-lidarr-sync:<version>`, `:<major>.<minor>` and `:latest`.
 
+## 1.2.0
+
+- **Album sync (optional, off by default):** Lidarr monitors only the albums in your Apple Music library instead of every album by each artist. Turn it on in **Settings → Albums** with your Lidarr URL and API key, and use the new **album version** of the Shortcut (`/shortcut/albums`), which sends `Album Artist<TAB>Album` per song. Albums with files in Lidarr stay monitored; artists with no matched album are left alone. See the README section *Only the albums you have*.
+- The regular Shortcut and existing setups are unchanged. With album sync off, or for people still on the regular Shortcut, nothing new happens.
+
 ## 1.1.0
 
 - **Settings page** with an external URL (phones away from home) and an internal URL (home network).

@@ -26,7 +26,7 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "1.1.0"  # MAJOR.MINOR.PATCH; the release tag must be v + this (CI checks)
+VERSION = "1.2.0"  # MAJOR.MINOR.PATCH; the release tag must be v + this (CI checks)
 TOKEN = os.environ.get("TOKEN", "")  # API token (Lidarr /list); generated and kept in state.json when unset
 RESET_ADMIN = os.environ.get("RESET_ADMIN", "").lower() in ("1", "true", "yes")
 SETUP_CODE = secrets.token_hex(4)  # printed to the log while no admin exists
@@ -37,14 +37,16 @@ UA = os.environ.get(
     f"applemusic-lidarr-sync/{VERSION} ( https://github.com/egamer24/applemusic-lidarr-sync )",
 )
 STATE_FILE = os.path.join(DATA, "state.json")
-SHORTCUT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Sync to Lidarr.shortcut")
+HERE = os.path.dirname(os.path.abspath(__file__))
+SHORTCUTS = {"/shortcut": "Sync to Lidarr.shortcut", "/shortcut/albums": "Sync to Lidarr (albums).shortcut"}
 SPLIT = re.compile(r"\s*(?:,|&|\+| x | feat\.? | ft\.? | featuring | with | and )\s*", re.I)
 USER = re.compile(r"^[a-z0-9_-]{1,32}$")
 HISTORY = 30  # uploads kept per user
 
 lock = threading.Lock()
 wake = threading.Event()
-# users: name -> {"names": [...], "last_ingest": str|None, "token_hash": str|None, "history": [...]}
+album_wake = threading.Event()
+# users: name -> {"names": [...], "albums": [[artist, album], ...], "last_ingest": str|None, "token_hash": str|None, "history": [...]}
 # cache: artist name -> [mbid, ...]  ([] = no match)
 state = {"users": {}, "cache": {}}
 
@@ -62,6 +64,7 @@ def load():
     for u in state["users"].values():
         u.setdefault("token_hash", None)
         u.setdefault("history", [])
+        u.setdefault("albums", [])
     state["cache"] = {n: ids for n, ids in state["cache"].items() if ids}  # retry misses after an update
 
 
@@ -174,6 +177,21 @@ def record_failure():
 
 # ---------- matching ----------
 
+def parse_upload(body: bytes, content_type: str) -> tuple[list[str], list[list[str]]]:
+    """Artist names, plus [artist, album] pairs from "Artist<TAB>Album" lines (the album Shortcut)."""
+    names, albums, seen = [], [], set()
+    for line in parse_names(body, content_type):
+        artist, tab, album = line.partition("\t")
+        artist, album = artist.strip(), album.strip()
+        if not artist:
+            continue
+        names.append(artist)
+        if tab and album and (artist.casefold(), album.casefold()) not in seen:
+            seen.add((artist.casefold(), album.casefold()))
+            albums.append([artist, album])
+    return list(dict.fromkeys(names)), albums
+
+
 def parse_names(body: bytes, content_type: str) -> list[str]:
     """Accept a JSON list, {"artists": [...]}, or plain text with one name per line."""
     text = body.decode("utf-8", "replace").strip()
@@ -257,6 +275,7 @@ def worker():
         with lock:
             todo = [n for n in all_names() if n not in state["cache"]]
         if not todo:
+            album_wake.set()  # lookups done: albums can map to artists now
             wake.wait()
             wake.clear()
             continue
@@ -277,9 +296,10 @@ def mbids() -> list[str]:
         return list(dict.fromkeys(i for n in all_names() for i in state["cache"].get(n, [])))
 
 
-def ingest(user: str, names: list[str]) -> dict:
+def ingest(user: str, names: list[str], albums: list[list[str]] | None = None) -> dict:
     with lock:
         u = state["users"].setdefault(user, {"names": [], "last_ingest": None, "token_hash": None, "history": []})
+        u["albums"] = albums or []
         old, new = set(u["names"]), set(names)
         added = [n for n in names if n not in old]
         removed = sorted(old - new)
@@ -289,6 +309,105 @@ def ingest(user: str, names: list[str]) -> dict:
         save()
     wake.set()
     return {"user": user, "received": len(names), "added": len(added), "removed": len(removed)}
+
+
+# ---------- albums (optional): monitor only the albums in the library ----------
+
+EDITION = re.compile(r"\s*(?:[(\[][^)\]]*[)\]]|-\s*(?:single|ep)\s*$)", re.I)
+
+
+def album_key(title: str) -> str:
+    """Compare album titles without "(Deluxe Edition)", "[Remastered]", " - Single" and the like."""
+    return key(EDITION.sub("", title)) if EDITION.sub("", title).strip() else key(title)
+
+
+def wanted_albums() -> dict:
+    """MusicBrainz artist id -> {"Artist — Album": album title}, from every user's album upload. Call with lock held."""
+    out = {}
+    for u in state["users"].values():
+        for artist, album in u.get("albums", []):
+            for mbid in state["cache"].get(artist, []):
+                out.setdefault(mbid, {})[f"{artist} — {album}"] = album
+    return out
+
+
+def album_plan(artists: list[dict], albums: list[dict], wanted: dict) -> dict:
+    """What to change in Lidarr. Only artists with at least one matched album are touched; for them,
+    library albums get monitored and other albums unmonitored, unless Lidarr already has files for them."""
+    by_artist = {}
+    for a in albums:
+        by_artist.setdefault(a["artistId"], []).append(a)
+    plan = {"artists": [], "monitor": [], "unmonitor": [], "managed": 0, "matched": set()}
+    for ar in artists:
+        own = by_artist.get(ar["id"], [])
+        exact, loose, mine = {}, {}, set()
+        for a in own:
+            exact.setdefault(key(a["title"]), []).append(a["id"])
+            loose.setdefault(album_key(a["title"]), []).append(a["id"])
+        for label, title in (wanted.get(ar.get("foreignArtistId")) or {}).items():
+            ids = exact.get(key(title)) or loose.get(album_key(title))  # "X" shouldn't also pick "X (Live)"
+            if ids:
+                mine.update(ids)
+                plan["matched"].add(label)
+        if not mine:
+            continue  # nothing matched: leave this artist as it is rather than unmonitor everything
+        plan["managed"] += 1
+        if not ar.get("monitored"):
+            plan["artists"].append(ar["id"])
+        for a in own:
+            if a["id"] in mine and not a.get("monitored"):
+                plan["monitor"].append(a["id"])
+            elif a["id"] not in mine and a.get("monitored") and not (a.get("statistics") or {}).get("trackFileCount"):
+                plan["unmonitor"].append(a["id"])
+    labels = {label for w in wanted.values() for label in w}
+    plan["unmatched"] = sorted(labels - plan["matched"])
+    plan["matched"] = len(plan["matched"])
+    return plan
+
+
+def lidarr(cfg: dict, method: str, path: str, body=None):
+    req = urllib.request.Request(cfg["lidarr_url"] + "/api/v1" + path, method=method,
+                                 data=None if body is None else json.dumps(body).encode(),
+                                 headers={"X-Api-Key": cfg["lidarr_key"], "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=120) as r:
+        data = r.read()
+    return json.loads(data) if data else None
+
+
+def sync_albums():
+    with lock:
+        cfg = dict(state.get("settings", {}))
+        if not (cfg.get("albums_only") and cfg.get("lidarr_url") and cfg.get("lidarr_key")):
+            return
+        wanted = wanted_albums()
+    if not wanted:
+        return  # nobody has uploaded albums yet (old Shortcut): change nothing
+    plan = album_plan(lidarr(cfg, "GET", "/artist"), lidarr(cfg, "GET", "/album"), wanted)
+    if plan["artists"]:
+        lidarr(cfg, "PUT", "/artist/editor", {"artistIds": plan["artists"], "monitored": True})
+    if plan["unmonitor"]:
+        lidarr(cfg, "PUT", "/album/monitor", {"albumIds": plan["unmonitor"], "monitored": False})
+    if plan["monitor"]:
+        lidarr(cfg, "PUT", "/album/monitor", {"albumIds": plan["monitor"], "monitored": True})
+        lidarr(cfg, "POST", "/command", {"name": "AlbumSearch", "albumIds": plan["monitor"]})
+    with lock:
+        state["album_sync"] = {"at": now(), "error": "", **{k: plan[k] for k in ("managed", "matched", "unmatched")},
+                               "monitored": len(plan["monitor"]), "unmonitored": len(plan["unmonitor"])}
+        save()
+    print(f"album sync: {plan['managed']} artists, +{len(plan['monitor'])} -{len(plan['unmonitor'])} albums", flush=True)
+
+
+def album_worker():
+    while True:
+        album_wake.wait(3600)  # hourly, so artists Lidarr adds on its own list sync get picked up
+        album_wake.clear()
+        try:
+            sync_albums()
+        except Exception as e:
+            print(f"album sync failed: {e}", flush=True)
+            with lock:
+                state.setdefault("album_sync", {})["error"] = f"{now()}: {e}"
+                save()
 
 
 def stats(names: list[str], cache: dict) -> dict:
@@ -382,7 +501,36 @@ so nobody has to type an address.</p>
 <label>Internal URL, on your home network (e.g. <code>http://192.168.1.10:8099</code>). Lidarr uses this one.
 <input name=internal_url type=url value="{esc(cfg.get('internal_url', ''))}" placeholder="http://192.168.1.10:8099" autocapitalize=none></label>
 <button>Save</button></form>
-<p class=mute>Leave one empty if you don't use it. Without an external URL, the address you're using right now is used.</p></div>""")
+<p class=mute>Leave one empty if you don't use it. Without an external URL, the address you're using right now is used.</p></div>
+<div class=card style="max-width:620px"><h2>Albums (optional)</h2>
+<p class=mute>Off by default: Lidarr adds each artist with whatever its import list's <b>Monitor</b> setting says.
+On: for each artist, Lidarr monitors only the albums in your Apple Music library (albums it already has files for stay monitored),
+and searches for them. Needs the <b>album version of the Shortcut</b>; uploads from the regular Shortcut change nothing.
+Checked hourly. In Lidarr, set the Apple Music list's <b>Monitor</b> to <b>None</b> so new artists don't start with every album.</p>
+<form method=post action=/settings class=stack>
+<input type=hidden name=albums_form value=1>
+<label class=row style="display:flex"><input type=checkbox name=albums_only {'checked' if cfg.get('albums_only') else ''}> Only monitor albums in the library</label>
+<label>Lidarr URL (e.g. <code>http://192.168.1.10:8686</code>)
+<input name=lidarr_url type=url value="{esc(cfg.get('lidarr_url', ''))}" placeholder="http://192.168.1.10:8686" autocapitalize=none></label>
+<label>Lidarr API key (Lidarr → Settings → General){' — saved; leave empty to keep it' if cfg.get('lidarr_key') else ''}
+<input name=lidarr_key type=password autocomplete=off></label>
+<button>Save</button></form>{album_report(cfg)}</div>""")
+
+
+def album_report(cfg: dict) -> str:
+    with lock:
+        r = dict(state.get("album_sync", {}))
+    if not cfg.get("albums_only") or not r:
+        return ""
+    err = f"<p class=warn>Last error: {esc(r['error'])}</p>" if r.get("error") else ""
+    if "at" not in r:
+        return err
+    miss = "".join(f"<li>{esc(n)}</li>" for n in r.get("unmatched", [])[:500])
+    return f"""{err}<p class=mute>Last check {esc(r['at'])}: {r['managed']} artists, {r['matched']} albums matched
+(+{r['monitored']} monitored, −{r['unmonitored']} unmonitored).</p>
+<details><summary class=mute>{len(r.get('unmatched', []))} library albums not found in Lidarr</summary>
+<p class=mute>Usually singles and EPs (only listed if Lidarr's metadata profile includes them), compilations, or titles that differ.
+Artists Lidarr hasn't added yet show up here until it does.</p><ul class=cols>{miss}</ul></details>"""
 
 
 def dashboard(h) -> str:
@@ -439,6 +587,7 @@ def user_page(h, user: str, new_token: str | None = None) -> str:
         if d is None:
             return ""
         names, last, hist, has_tok = list(d["names"]), d["last_ingest"], list(d["history"]), bool(d["token_hash"])
+        n_albums = len(d.get("albums", []))
         cache = dict(state["cache"])
     s = stats(names, cache)
     external, internal = site_urls(h)
@@ -475,7 +624,8 @@ def user_page(h, user: str, new_token: str | None = None) -> str:
  <div class=card><div class=mute>Last upload</div><div style="margin-top:6px">{age_badge(last)}</div></div>
 </div>{tok}
 <div class=card><h2>Phone setup</h2>
-<ol><li><a href="/shortcut">Download the Shortcut</a> on the iPhone and tap <b>Add Shortcut</b>.</li>
+<ol><li><a href="/shortcut">Download the Shortcut</a> on the iPhone and tap <b>Add Shortcut</b>.
+Using album sync (<a href="/settings">Settings</a>)? Get the <a href="/shortcut/albums">album version</a> instead.{f" Last upload had {n_albums} albums." if n_albums else ""}</li>
 <li>When it asks, paste this user's <b>setup code</b> (shown once when you generate a token below). {esc(tok_state)}</li>
 <li>iPhone Settings → Apps → Shortcuts → Advanced → <b>Allow Sharing Large Amounts of Data</b> (iOS 17 and earlier: Settings → Shortcuts → Advanced). Without it iOS blocks big libraries.</li>
 <li>Shortcuts → Automation → Time of Day → daily → run <b>Sync to Lidarr</b>.</li></ol>
@@ -653,14 +803,14 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         if path == "/healthz":
             return self.send(200, {"ok": True})
-        if path == "/shortcut":  # public: the file holds no secrets, it asks for URL + token on import
+        if path in SHORTCUTS:  # public: the files hold no secrets, they ask for URL + token on import
             try:
-                with open(SHORTCUT_FILE, "rb") as f:
+                with open(os.path.join(HERE, SHORTCUTS[path]), "rb") as f:
                     data = f.read()
             except FileNotFoundError:
                 return self.send(404, {"error": "shortcut not bundled"})
             return self.send(200, data, "application/octet-stream",
-                             {"Content-Disposition": 'attachment; filename="Sync to Lidarr.shortcut"'})
+                             {"Content-Disposition": f'attachment; filename="{SHORTCUTS[path]}"'})
         if path == "/list":  # Lidarr: API token
             if not (self.is_admin_token(self.given_token()) or self.is_admin()):
                 return self.send(401, {"error": "bad or missing token"})
@@ -752,16 +902,23 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/account/2fa/"):
             return self.two_factor_settings(path.rsplit("/", 1)[1], self.form())
         if path == "/settings":
-            f = self.form()
-            new = {}
-            for k in ("external_url", "internal_url"):
+            f = self.form()  # two forms post here; each changes only its own fields
+            with lock:
+                new = dict(state.get("settings", {}))
+            for k in ("lidarr_url",) if "albums_form" in f else ("external_url", "internal_url"):
                 v = f.get(k, "").strip().rstrip("/")
                 if v and not URL_RE.fullmatch(v):
                     return self.html(settings_page(f"Not a valid http(s) address: {v}"), 400)
                 new[k] = v
+            if "albums_form" in f:
+                new["albums_only"] = f.get("albums_only") == "on"
+                new["lidarr_key"] = f.get("lidarr_key", "").strip() or new.get("lidarr_key", "")
             with lock:
+                if new.get("albums_only") and not (new.get("lidarr_url") and new.get("lidarr_key")):
+                    return self.html(settings_page("Album sync needs the Lidarr URL and API key."), 400)
                 state["settings"] = new
                 save()
+            album_wake.set()
             return self.html(settings_page("Saved.", ok=True))
         if path == "/users":
             user = self.form().get("user", "").strip().casefold()
@@ -842,11 +999,11 @@ class Handler(BaseHTTPRequestHandler):
         if length > 20_000_000:
             return self.send(413, {"error": "too large"})
         body, ctype = self.rfile.read(length), self.headers.get("Content-Type", "")
-        names = parse_names(body, ctype)
+        names, albums = parse_upload(body, ctype)
         if not names:
             print(f"empty ingest for {user}: {length} bytes, {ctype!r}", flush=True)
             return self.send(400, {"error": "no artist names in body", "bytes": length, "content_type": ctype})
-        self.send(200, ingest(user, names))
+        self.send(200, ingest(user, names, albums))
 
     def log_message(self, fmt, *args):
         if "/healthz" not in self.path:
@@ -890,5 +1047,6 @@ if __name__ == "__main__":
     if "admin" not in state:
         print(f"No admin account yet. Open the web GUI and use setup code: {SETUP_CODE}", flush=True)
     threading.Thread(target=worker, daemon=True).start()
+    threading.Thread(target=album_worker, daemon=True).start()
     print(f"listening on :{PORT}", flush=True)
     ThreadingHTTPServer(("", PORT), Handler).serve_forever()

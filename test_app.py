@@ -99,6 +99,42 @@ def test_setup_code():
     assert app.URL_RE.fullmatch("https://example.com/music")
     assert not app.URL_RE.fullmatch("ftp://x") and not app.URL_RE.fullmatch("https://a b") and not app.URL_RE.fullmatch("javascript:alert(1)")
 
+def test_parse_upload():
+    names, albums = app.parse_upload(b"Drake\tViews\nDrake\tViews\nSZA\tCtrl\nKesha\n", "text/plain")
+    assert names == ["Drake", "SZA", "Kesha"]
+    assert albums == [["Drake", "Views"], ["SZA", "Ctrl"]]
+    assert app.parse_upload(b"Drake\nSZA", "text/plain") == (["Drake", "SZA"], [])  # regular Shortcut
+
+
+def test_album_key():
+    assert app.album_key("Take Care (Deluxe Edition)") == app.album_key("Take Care")
+    assert app.album_key("Hotline Bling - Single") == app.album_key("Hotline Bling")
+    assert app.album_key("Rumours [Remastered]") == "rumours"
+    assert app.album_key("(What's the Story) Morning Glory?") == "morningglory"  # loose, still equal on both sides
+    assert app.album_key("()") != ""
+
+
+def test_album_plan():
+    wanted = {"mb-drake": {"Drake — Views": "Views", "Drake — Take Care (Deluxe)": "Take Care (Deluxe)",
+                           "Drake — Hotline Bling - Single": "Hotline Bling - Single"},
+              "mb-sza": {"SZA — Nope": "Nope"}}
+    artists = [{"id": 1, "foreignArtistId": "mb-drake", "monitored": False},
+               {"id": 2, "foreignArtistId": "mb-sza", "monitored": True},
+               {"id": 3, "foreignArtistId": "mb-other", "monitored": True}]
+    albums = [{"id": 10, "artistId": 1, "title": "Views", "monitored": False},
+              {"id": 14, "artistId": 1, "title": "Views (Live)", "monitored": False},
+              {"id": 11, "artistId": 1, "title": "Take Care", "monitored": True},
+              {"id": 12, "artistId": 1, "title": "Scorpion", "monitored": True},
+              {"id": 13, "artistId": 1, "title": "Nothing Was the Same", "monitored": True, "statistics": {"trackFileCount": 3}},
+              {"id": 20, "artistId": 2, "title": "Ctrl", "monitored": True},
+              {"id": 30, "artistId": 3, "title": "Whatever", "monitored": True}]
+    p = app.album_plan(artists, albums, wanted)
+    assert p["artists"] == [1]            # Drake gets monitored
+    assert p["monitor"] == [10]           # Views, not Views (Live); Take Care already monitored
+    assert p["unmonitor"] == [12]         # Scorpion; NWTS has files so it stays
+    assert p["managed"] == 1 and p["matched"] == 2  # SZA: nothing matched, left alone
+    assert p["unmatched"] == ["Drake — Hotline Bling - Single", "SZA — Nope"]
+
 
 if __name__ == "__main__":
-    test_parse_names(); test_pick(); test_split(); test_users(); test_ingest_history(); test_password(); test_totp(); test_cookies(); test_lockout(); test_setup_code(); print("ok")
+    test_parse_names(); test_pick(); test_split(); test_users(); test_ingest_history(); test_password(); test_totp(); test_cookies(); test_lockout(); test_setup_code(); test_parse_upload(); test_album_key(); test_album_plan(); print("ok")
