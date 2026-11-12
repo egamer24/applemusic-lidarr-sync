@@ -16,6 +16,11 @@ def test_pick():
     assert app.pick("drake", results) == "2"
     assert app.pick("Beyoncé", results) == "3"
     assert app.pick("Nobody", results) is None
+    assert app.pick("Ne-Yo", [{"id": "4", "name": "Ne\u2010Yo", "score": 100}]) == "4"
+    assert app.pick("D'Angelo", [{"id": "5", "name": "D\u2019Angelo", "score": 100}]) == "5"
+    assert app.pick("Ke$ha", [{"id": "6", "name": "Kesha", "score": 100}]) == "6"
+    assert app.pick("Cee Lo Green", [{"id": "7", "name": "CeeLo Green", "score": 100}]) == "7"
+    assert app.pick("Joe", [{"id": "8", "name": "Joe Cocker", "score": 100}, {"id": "9", "name": "Joe", "score": 80}]) == "9"
 
 
 def test_split():

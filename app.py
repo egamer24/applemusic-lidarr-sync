@@ -9,6 +9,7 @@ import json
 import os
 import re
 import threading
+import unicodedata
 import time
 import urllib.parse
 import urllib.error
@@ -34,6 +35,7 @@ def load():
     try:
         with open(STATE_FILE) as f:
             state.update(json.load(f))
+        state["cache"] = {n: ids for n, ids in state["cache"].items() if ids}  # retry misses after an update
     except FileNotFoundError:
         pass
 
@@ -66,12 +68,19 @@ def parse_names(body: bytes, content_type: str) -> list[str]:
     return out
 
 
+def key(name: str) -> str:
+    """Loose form for comparing names: no case, accents, punctuation or spaces; `$` reads as `s` (Ke$ha)."""
+    n = unicodedata.normalize("NFKD", name.casefold().replace("$", "s"))
+    k = "".join(c for c in n if c.isalnum())
+    return k or name.casefold()
+
+
 def pick(name: str, results: list[dict]) -> str | None:
-    """Exact (case-insensitive) match on name, sort name or alias; MusicBrainz's ranking breaks ties."""
-    want = name.casefold()
+    """Match on name, sort name or alias (loosely); MusicBrainz's ranking breaks ties."""
+    want = key(name)
     for r in results:
         names = {r.get("name", ""), r.get("sort-name", "")} | {a.get("name", "") for a in r.get("aliases", [])}
-        if r.get("score", 0) >= 90 and want in {n.casefold() for n in names}:
+        if want in {key(n) for n in names}:
             return r["id"]
     return None
 
@@ -79,10 +88,11 @@ def pick(name: str, results: list[dict]) -> str | None:
 _last_call = 0.0
 
 
-def mb_search(name: str) -> list[dict]:
+def mb_search(name: str, exact: bool = True) -> list[dict]:
     """MusicBrainz artist search, at most one request every 1.5s, retrying 503 (rate limit)."""
     global _last_call
-    q = urllib.parse.urlencode({"query": f'artist:"{name}"', "fmt": "json", "limit": 10})
+    query = f'artist:"{name}"' if exact else re.sub(r'[+\-&|!(){}\[\]^"~*?:\\/]', " ", name)
+    q = urllib.parse.urlencode({"query": query, "fmt": "json", "limit": 25})
     req = urllib.request.Request(f"https://musicbrainz.org/ws/2/artist?{q}", headers={"User-Agent": UA})
     for attempt in range(5):
         time.sleep(max(0.0, _last_call + 1.5 - time.time()))
@@ -98,7 +108,7 @@ def mb_search(name: str) -> list[dict]:
 
 def resolve(name: str) -> list[str]:
     # ponytail: same-name artists resolve to MusicBrainz's top exact match; send album too if this misfires
-    hit = pick(name, mb_search(name))
+    hit = pick(name, mb_search(name)) or pick(name, mb_search(name, exact=False))
     if hit:
         return [hit]
     parts = [p for p in SPLIT.split(name) if p and p.casefold() != name.casefold()]
