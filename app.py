@@ -143,7 +143,8 @@ def mbids() -> list[str]:
 class Handler(BaseHTTPRequestHandler):
     def authed(self) -> bool:
         q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-        given = q.get("token", [""])[0] or self.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        given = q.get("token", [""])[0].strip() or self.headers.get("Authorization", "").strip()
+        given = re.sub(r"^bearer\s+", "", given, flags=re.I).strip()  # pasted tokens often carry spaces/newlines
         return bool(TOKEN) and given == TOKEN
 
     def send(self, code: int, body, ctype="application/json"):
@@ -186,7 +187,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
         if "/healthz" not in self.path:
-            print(f"{self.address_string()} {fmt % args}".replace(TOKEN or "\0", "***"), flush=True)
+            print(re.sub(r"token=[^ &]*", "token=***", f"{self.address_string()} {fmt % args}"), flush=True)
 
 
 def status_page() -> str:
