@@ -26,6 +26,7 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+VERSION = "1.0.1"  # MAJOR.MINOR.PATCH; the release tag must be v + this (CI checks)
 TOKEN = os.environ.get("TOKEN", "")  # API token (Lidarr /list); generated and kept in state.json when unset
 RESET_ADMIN = os.environ.get("RESET_ADMIN", "").lower() in ("1", "true", "yes")
 SETUP_CODE = secrets.token_hex(4)  # printed to the log while no admin exists
@@ -33,7 +34,7 @@ DATA = os.environ.get("DATA_DIR", "/data")
 PORT = int(os.environ.get("PORT", "8080"))
 UA = os.environ.get(
     "MB_USER_AGENT",
-    "applemusic-lidarr-sync/0.3 ( https://github.com/egamer24/applemusic-lidarr-sync )",
+    f"applemusic-lidarr-sync/{VERSION} ( https://github.com/egamer24/applemusic-lidarr-sync )",
 )
 STATE_FILE = os.path.join(DATA, "state.json")
 SHORTCUT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Sync to Lidarr.shortcut")
@@ -333,7 +334,8 @@ def page(title: str, body: str, nav: bool = True) -> str:
     head = ('<header><a href="/">Apple Music → Lidarr</a><div class=row><a href="/account" class=mute>Account</a>'
             '<form class=inline method=post action=/logout><button class=ghost>Sign out</button></form></div></header>') if nav else ""
     return (f"<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
-            f"<title>{esc(title)}</title><style>{CSS}</style>{head}<main>{body}</main>{COPY_JS}</html>")
+            f"<title>{esc(title)}</title><style>{CSS}</style>{head}<main>{body}<footer class=mute style="margin:24px 0 8px;text-align:center">"
+            f"<a href='https://github.com/egamer24/applemusic-lidarr-sync/releases' style='color:inherit'>v{VERSION}</a></footer></main>{COPY_JS}</html>")
 
 
 def age_badge(ts: str | None) -> str:

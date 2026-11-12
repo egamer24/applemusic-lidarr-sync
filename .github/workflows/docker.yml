@@ -11,6 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Tag matches VERSION in app.py
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: grep -q "^VERSION = \"${GITHUB_REF_NAME#v}\"" app.py || { echo "::error::tag $GITHUB_REF_NAME doesn't match VERSION in app.py"; exit 1; }
       - run: docker build -t app . && docker run --rm -v "$PWD:/src" -w /src --entrypoint python app test_app.py
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
@@ -26,6 +29,7 @@ jobs:
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
       - uses: docker/build-push-action@v6
         with:
           platforms: linux/amd64,linux/arm64

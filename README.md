@@ -247,11 +247,19 @@ Confirmed on iOS 27 with a 1,421-song library (the run is blocked and the upload
 
 **Forgot the admin password?** Set `RESET_ADMIN=true`, restart, set up again, then remove the variable. Users, tokens and lists are kept.
 
+## Versions and updates
+
+`MAJOR.MINOR.PATCH`: patch releases (1.0.**1**) are fixes, docs and packaging; minor releases (1.**1**.0) add features without changing existing setups; major releases (**2**.0.0) need you to change something. See [CHANGELOG.md](CHANGELOG.md).
+
+Image tags: `:latest`, an exact version like `:1.0.1`, or `:1.0` to get patch fixes automatically without feature updates. The running version is shown at the bottom of the admin pages.
+
 ## Development
 
 ```
 docker build -t applemusic-lidarr-sync .
 docker run --rm -v "$PWD:/src" -w /src --entrypoint python applemusic-lidarr-sync test_app.py
 ```
+
+Releasing: bump `VERSION` in `app.py`, add a CHANGELOG entry, push, then tag `vX.Y.Z` (e.g. `gh release create v1.0.2`). The build refuses a tag that doesn't match `VERSION`.
 
 MIT licensed. Not affiliated with or endorsed by Apple, Lidarr or MusicBrainz. Apple Music is a trademark of Apple Inc.
