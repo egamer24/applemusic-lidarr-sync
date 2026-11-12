@@ -56,16 +56,16 @@ x-casaos:
   tagline:
     en_us: Keep Lidarr following your Apple Music library
   description:
-    en_us: |
+    en_us: >-
       An iPhone Shortcut sends your Apple Music library's artist names to this app every night.
       It matches them on MusicBrainz and serves them to Lidarr as a Custom List, so artists you
       add in Apple Music show up in Lidarr on their own. No Mac, no Apple Developer account, and
       nothing signs in to your Apple ID. Several people can share one server.
   tips:
     before_install:
-      en_us: |
-        After install, open the app and create the admin account. The one-time setup code is in
-        the app's log (CasaOS: app menu → Logs, or `docker logs applemusic-lidarr-sync`).
+      en_us: >-
+        After install, open the app and create the admin account. The one-time setup code
+        is in the app's logs: on the app's tile, ⋮ → Settings → the terminal icon (top right) → Logs.
         Full guide: https://github.com/egamer24/applemusic-lidarr-sync
   index: /
   port_map: "8099"
