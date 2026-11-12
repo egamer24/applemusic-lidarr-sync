@@ -1,7 +1,7 @@
 FROM python:3.13-alpine
 WORKDIR /app
-COPY app.py .
-RUN mkdir /data && chown 1000:1000 /data
+COPY ["app.py", "shortcut/Sync to Lidarr.shortcut", "./"]
+RUN chmod 644 /app/* && mkdir /data && chown 1000:1000 /data
 ENV DATA_DIR=/data PORT=8080 PYTHONUNBUFFERED=1
 VOLUME /data
 EXPOSE 8080

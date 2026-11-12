@@ -28,29 +28,40 @@ services:
 
 | Variable | Default | |
 |---|---|---|
-| `TOKEN` | (required) | Shared secret for every endpoint except `/healthz` |
+| `TOKEN` | (required) | Admin token: signs in to the web GUI and is what Lidarr uses for `/list` |
 | `PORT` | `8080` | Port inside the container |
 | `DATA_DIR` | `/data` | Where `state.json` (artist list + lookup cache) lives |
 | `MB_USER_AGENT` | project URL | MusicBrainz asks every client to identify itself |
 
-Endpoints (token as `Authorization: Bearer <token>` or `?token=<token>`):
+## Web GUI
 
-| | |
-|---|---|
-| `POST /ingest?user=<name>` | Body: one artist per line, a JSON array, or `{"artists": [...]}`. Replaces that user's previous list. `user` is optional (default `default`); 1–32 letters, digits, `-` or `_` |
-| `GET /list` | Lidarr Custom List JSON, every user's artists combined |
-| `GET /` | Status page: each user's count and last upload, matched / pending / unmatched artists |
-| `GET /healthz` | No token needed |
+Open the container's address and sign in with the admin `TOKEN`. From there you can:
+
+- **Add users.** Each gets a personal token, shown once with copy buttons. Regenerate or delete it any time.
+- **See reports:** totals, each user's artist count, matches and last upload (amber when it's over 36 hours old), plus per-user upload history with the artists that were added or removed, unmatched names, and matched artists linked to MusicBrainz.
+- **Copy the Lidarr list URL** and **download the Shortcut** (`/shortcut`, public, it holds no secrets).
+
+## Endpoints
+
+| | Auth | |
+|---|---|---|
+| `POST /ingest` | user token, or admin token + `?user=<name>` (default `default`) | Body: one artist per line, a JSON array, or `{"artists": [...]}`. Replaces that user's list |
+| `GET /list` | admin token | Lidarr Custom List JSON, every user combined |
+| `GET /` | admin (cookie or token) | Web GUI |
+| `GET /shortcut` | none | The iPhone Shortcut |
+| `GET /healthz` | none | Health check |
+
+Tokens go in `Authorization: Bearer <token>` or `?token=<token>`.
 
 MusicBrainz allows about one lookup per second, so the first upload of a big library takes a while (the status page shows an estimate). Results are cached, so later uploads only look up new names.
 
 ## Several people, one server
 
-Each person's phone uploads to its own list by adding `?user=<name>` to the URL, e.g. `https://your-host/ingest?user=alex`. An upload only replaces that person's list, and `/list` gives Lidarr everyone's artists combined (each artist once), so one Lidarr Custom List covers the whole household. Everyone uses the same token.
+Add each person in the web GUI and give them their own token. An upload only replaces that person's list, and `/list` gives Lidarr everyone's artists combined (each artist once), so one Lidarr Custom List covers the whole household.
 
 ## The iPhone Shortcut
 
-**Quick way:** open [`shortcut/Sync to Lidarr.shortcut`](shortcut/Sync%20to%20Lidarr.shortcut) on your iPhone and tap **Add Shortcut**. It asks for your `/ingest` URL (add `?user=<name>` if several people share the server) and your token. It sends every album artist in your library; edit the **Find Music** action to narrow it down.
+**Quick way:** open [`shortcut/Sync to Lidarr.shortcut`](shortcut/Sync%20to%20Lidarr.shortcut) on your iPhone and tap **Add Shortcut**. It asks for your `/ingest` URL and your token (the user's own token from the web GUI). It's also served by the container at `/shortcut`. It sends every album artist in your library; edit the **Find Music** action to narrow it down.
 
 (`shortcut/build.py` generates it; sign on a Mac with `shortcuts sign --mode anyone`.)
 

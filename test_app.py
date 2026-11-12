@@ -36,5 +36,17 @@ def test_users():
     assert app.USER.match("wife") and not app.USER.match("../x")
 
 
+def test_ingest_history(tmp="/tmp/amls-test"):
+    import os
+    os.makedirs(tmp, exist_ok=True)
+    app.STATE_FILE = os.path.join(tmp, "state.json")
+    app.state.update(users={}, cache={})
+    app.ingest("me", ["A", "B"])
+    r = app.ingest("me", ["B", "C"])
+    assert r == {"user": "me", "received": 2, "added": 1, "removed": 1}
+    h = app.state["users"]["me"]["history"][0]
+    assert h["added"] == ["C"] and h["removed"] == ["A"]
+
+
 if __name__ == "__main__":
-    test_parse_names(); test_pick(); test_split(); test_users(); print("ok")
+    test_parse_names(); test_pick(); test_split(); test_users(); test_ingest_history(); print("ok")
