@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 320" width="840" height="320" role="img" aria-label="applemusic-lidarr-sync: iPhone Shortcut sends artist names to this container, which gives Lidarr MusicBrainz IDs">
+<defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fdfbfc"/><stop offset="1" stop-color="#f3f6f4"/></linearGradient>
+    <linearGradient id="brand" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0" stop-color="#e8274a"/><stop offset="0.5" stop-color="#c77700"/><stop offset="1" stop-color="#0b9f5b"/>
+      <animate attributeName="x1" values="0%;-40%;0%" dur="6s" repeatCount="indefinite"/>
+      <animate attributeName="x2" values="100%;140%;100%" dur="6s" repeatCount="indefinite"/>
+    </linearGradient>
+    <linearGradient id="flow" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#e8274a"/><stop offset="1" stop-color="#0b9f5b"/></linearGradient>
+    <filter id="blur" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="38"/></filter>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3"/></filter>
+    <clipPath id="clip"><rect width="840" height="320" rx="16"/></clipPath>
+    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#1a1020" fill-opacity="0.045"/></pattern>
+  </defs>
+  <rect width="840" height="320" rx="16" fill="url(#bg)"/>
+  <rect width="840" height="320" rx="16" fill="url(#dots)"/>
+  <g clip-path="url(#clip)">
+  <ellipse cx="130" cy="60" rx="170" ry="120" fill="#e8274a" opacity="0.10" filter="url(#blur)">
+    <animate attributeName="cx" values="130;180;130" dur="9s" repeatCount="indefinite"/>
+  </ellipse>
+  <ellipse cx="720" cy="270" rx="170" ry="120" fill="#0b9f5b" opacity="0.10" filter="url(#blur)">
+    <animate attributeName="cx" values="720;660;720" dur="9s" repeatCount="indefinite"/>
+  </ellipse>
+  </g>
+  <g transform="translate(784 44)">
+    <circle r="13" fill="#c77700" opacity="0.9"/><circle cx="6" cy="-4" r="12" fill="#fdfbfc"/>
+    <circle cx="-26" cy="10" r="1.4" fill="#c77700"><animate attributeName="opacity" values="1;0.2;1" dur="2.6s" repeatCount="indefinite"/></circle>
+    <circle cx="-14" cy="26" r="1" fill="#c77700"><animate attributeName="opacity" values="0.2;1;0.2" dur="3.4s" repeatCount="indefinite"/></circle>
+  </g>
+  <text x="420" y="74" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="42" font-weight="800" letter-spacing="-1.5" fill="url(#brand)">applemusic-lidarr-sync</text>
+  <text x="420" y="106" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" fill="#5e5869">Your Apple Music artists, followed in Lidarr. Every night, on its own.</text>
+  <g>
+    <path d="M 190 200 L 344 200" stroke="#d9d2dc" stroke-width="2" fill="none"/>
+    <path d="M 190 200 L 344 200" stroke="url(#flow)" stroke-width="2" fill="none" stroke-dasharray="6 10">
+      <animate attributeName="stroke-dashoffset" values="32;0" dur="1.2s" repeatCount="indefinite"/>
+    </path>
+    <circle r="5" fill="url(#flow)"><animateMotion path="M 190 200 L 344 200" dur="2.4s" begin="0s" repeatCount="indefinite"/></circle>
+    <circle r="11" fill="#e8274a" opacity="0.25" filter="url(#soft)"><animateMotion path="M 190 200 L 344 200" dur="2.4s" begin="0s" repeatCount="indefinite"/></circle>
+    <text x="267.0" y="186" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace" font-size="12" fill="#5e5869">artist names</text>
+  </g>
+  <g>
+    <path d="M 496 200 L 634 200" stroke="#d9d2dc" stroke-width="2" fill="none"/>
+    <path d="M 496 200 L 634 200" stroke="url(#flow)" stroke-width="2" fill="none" stroke-dasharray="6 10">
+      <animate attributeName="stroke-dashoffset" values="32;0" dur="1.2s" repeatCount="indefinite"/>
+    </path>
+    <circle r="5" fill="url(#flow)"><animateMotion path="M 496 200 L 634 200" dur="2.4s" begin="1.2s" repeatCount="indefinite"/></circle>
+    <circle r="11" fill="#e8274a" opacity="0.25" filter="url(#soft)"><animateMotion path="M 496 200 L 634 200" dur="2.4s" begin="1.2s" repeatCount="indefinite"/></circle>
+    <text x="565.0" y="186" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace" font-size="12" fill="#5e5869">MusicBrainz IDs</text>
+  </g>
+  <g>
+    <rect x="116" y="144" width="68" height="112" rx="14" fill="#ffffff" stroke="#d9d2dc" stroke-width="2"/>
+    <rect x="138" y="151" width="24" height="5" rx="2.5" fill="#d9d2dc"/>
+    <rect x="130" y="194" width="5" height="10" rx="2" fill="url(#flow)"><animate attributeName="height" values="10;26;10" dur="1.10s" repeatCount="indefinite"/><animate attributeName="y" values="194;178;194" dur="1.10s" repeatCount="indefinite"/></rect><rect x="139" y="182" width="5" height="22" rx="2" fill="url(#flow)"><animate attributeName="height" values="22;8;22" dur="1.27s" repeatCount="indefinite"/><animate attributeName="y" values="182;196;182" dur="1.27s" repeatCount="indefinite"/></rect><rect x="148" y="188" width="5" height="16" rx="2" fill="url(#flow)"><animate attributeName="height" values="16;30;16" dur="1.44s" repeatCount="indefinite"/><animate attributeName="y" values="188;174;188" dur="1.44s" repeatCount="indefinite"/></rect><rect x="157" y="176" width="5" height="28" rx="2" fill="url(#flow)"><animate attributeName="height" values="28;12;28" dur="1.61s" repeatCount="indefinite"/><animate attributeName="y" values="176;192;176" dur="1.61s" repeatCount="indefinite"/></rect><rect x="166" y="192" width="5" height="12" rx="2" fill="url(#flow)"><animate attributeName="height" values="12;24;12" dur="1.78s" repeatCount="indefinite"/><animate attributeName="y" values="192;180;192" dur="1.78s" repeatCount="indefinite"/></rect>
+    <text x="150" y="236" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace" font-size="11" fill="#c77700">3:11 AM</text>
+  </g>
+  <g>
+    <rect x="350" y="154" width="140" height="92" rx="14" fill="#ffffff" stroke="#d9d2dc" stroke-width="2"/>
+    <rect x="362" y="166" width="116" height="20" rx="5" fill="#ffffff" stroke="#d9d2dc"/><circle cx="374" cy="176" r="3.5" fill="#0b9f5b"><animate attributeName="opacity" values="1;0.25;1" dur="1.6s" repeatCount="indefinite"/></circle><rect x="386" y="174" width="70" height="4" rx="2" fill="#d9d2dc"/><rect x="362" y="192" width="116" height="20" rx="5" fill="#ffffff" stroke="#d9d2dc"/><circle cx="374" cy="202" r="3.5" fill="#0b9f5b"><animate attributeName="opacity" values="1;0.25;1" dur="2.1s" repeatCount="indefinite"/></circle><rect x="386" y="200" width="56" height="4" rx="2" fill="#d9d2dc"/><rect x="362" y="218" width="116" height="20" rx="5" fill="#ffffff" stroke="#d9d2dc"/><circle cx="374" cy="228" r="3.5" fill="#0b9f5b"><animate attributeName="opacity" values="1;0.25;1" dur="2.6s" repeatCount="indefinite"/></circle><rect x="386" y="226" width="42" height="4" rx="2" fill="#d9d2dc"/>
+  </g>
+  <g>
+    <circle cx="690" cy="200" r="50" fill="#ffffff" stroke="#d9d2dc" stroke-width="2"/>
+    <circle cx="690" cy="200" r="40" fill="none" stroke="#d9d2dc"/>
+    <circle cx="690" cy="200" r="31" fill="none" stroke="#d9d2dc"/>
+    <circle cx="690" cy="200" r="15" fill="#0b9f5b"/>
+    <circle cx="690" cy="200" r="3" fill="#ffffff"/>
+    <path d="M 690 155 A 45 45 0 0 1 722 168" fill="none" stroke="#0b9f5b" stroke-width="3" stroke-linecap="round" opacity="0.8">
+      <animateTransform attributeName="transform" type="rotate" from="0 690 200" to="360 690 200" dur="4s" repeatCount="indefinite"/>
+    </path>
+  </g>
+  <text x="150" y="292" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#18141f">iPhone Shortcut</text><text x="420" y="292" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#18141f">this container</text><text x="690" y="292" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#18141f">Lidarr</text>
+</svg>
