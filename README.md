@@ -37,16 +37,20 @@ Endpoints (token as `Authorization: Bearer <token>` or `?token=<token>`):
 
 | | |
 |---|---|
-| `POST /ingest` | Body: one artist per line, a JSON array, or `{"artists": [...]}`. Replaces the previous list |
-| `GET /list` | Lidarr Custom List JSON |
-| `GET /` | Status page: last upload, matched / pending / unmatched artists |
+| `POST /ingest?user=<name>` | Body: one artist per line, a JSON array, or `{"artists": [...]}`. Replaces that user's previous list. `user` is optional (default `default`); 1–32 letters, digits, `-` or `_` |
+| `GET /list` | Lidarr Custom List JSON, every user's artists combined |
+| `GET /` | Status page: each user's count and last upload, matched / pending / unmatched artists |
 | `GET /healthz` | No token needed |
 
 MusicBrainz allows about one lookup per second, so the first upload of a big library takes a while (the status page shows an estimate). Results are cached, so later uploads only look up new names.
 
+## Several people, one server
+
+Each person's phone uploads to its own list by adding `?user=<name>` to the URL, e.g. `https://your-host/ingest?user=alex`. An upload only replaces that person's list, and `/list` gives Lidarr everyone's artists combined (each artist once), so one Lidarr Custom List covers the whole household. Everyone uses the same token.
+
 ## The iPhone Shortcut
 
-**Quick way:** open [`shortcut/Sync to Lidarr.shortcut`](shortcut/Sync%20to%20Lidarr.shortcut) on your iPhone and tap **Add Shortcut**. It asks for your `/ingest` URL and your token. It sends every album artist in your library; edit the **Find Music** action to narrow it down.
+**Quick way:** open [`shortcut/Sync to Lidarr.shortcut`](shortcut/Sync%20to%20Lidarr.shortcut) on your iPhone and tap **Add Shortcut**. It asks for your `/ingest` URL (add `?user=<name>` if several people share the server) and your token. It sends every album artist in your library; edit the **Find Music** action to narrow it down.
 
 (`shortcut/build.py` generates it; sign on a Mac with `shortcuts sign --mode anyone`.)
 
@@ -61,7 +65,9 @@ MusicBrainz allows about one lookup per second, so the first upload of a big lib
    - Headers: `Authorization` = `Bearer <your token>`
    - Request Body: **File** → *Combined Text*
 
-Run it once and open the status page to check. Then in **Automation → New Automation → Time of Day**, choose daily and **Run Immediately**, and pick this Shortcut.
+Run it once and open the status page to check. iOS blocks Shortcuts from sending more than a few hundred items until you turn on **Settings → Apps → Shortcuts → Advanced → Allow Sharing Large Amounts of Data**.
+
+Then in **Automation → New Automation → Time of Day**, choose daily and **Run Immediately**, and pick this Shortcut.
 
 The phone has to reach the container when the automation runs. Either it runs while you're on home Wi-Fi, or you put the container behind a reverse proxy with HTTPS (only `/ingest` needs to be reachable from outside, and the token protects it).
 

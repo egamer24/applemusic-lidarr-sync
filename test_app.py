@@ -28,5 +28,13 @@ def test_split():
     assert app.SPLIT.split("Drake feat. Rihanna") == ["Drake", "Rihanna"]
 
 
+def test_users():
+    app.state.update(users={"me": {"names": ["A", "B"], "last_ingest": None}, "wife": {"names": ["B", "C"], "last_ingest": None}},
+                     cache={"A": ["1"], "B": ["2"], "C": ["2", "3"]})
+    assert app.all_names() == ["A", "B", "C"]
+    assert app.mbids() == ["1", "2", "3"]
+    assert app.USER.match("wife") and not app.USER.match("../x")
+
+
 if __name__ == "__main__":
-    test_parse_names(); test_pick(); test_split(); print("ok")
+    test_parse_names(); test_pick(); test_split(); test_users(); print("ok")

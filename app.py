@@ -3,6 +3,8 @@
 An iPhone Shortcut POSTs your library's artist names to /ingest. This server
 looks each one up on MusicBrainz and serves the matches at /list in the format
 Lidarr's "Custom List" import list expects: [{"MusicBrainzId": "..."}].
+Several people can share one server: each uploads to /ingest?user=<name> and
+/list serves everyone's artists combined.
 """
 import html
 import json
@@ -28,13 +30,17 @@ SPLIT = re.compile(r"\s*(?:,|&|\+| x | feat\.? | ft\.? | featuring | with | and 
 
 lock = threading.Lock()
 wake = threading.Event()
-state = {"names": [], "cache": {}, "last_ingest": None}  # cache: name -> [mbid, ...] ([] = no match)
+USER = re.compile(r"^[a-z0-9_-]{1,32}$")
+# users: name -> {"names": [...], "last_ingest": str}; cache: artist name -> [mbid, ...] ([] = no match)
+state = {"users": {}, "cache": {}}
 
 
 def load():
     try:
         with open(STATE_FILE) as f:
             state.update(json.load(f))
+        if "names" in state:  # single-list state from v0.1
+            state["users"]["default"] = {"names": state.pop("names"), "last_ingest": state.pop("last_ingest", None)}
         state["cache"] = {n: ids for n, ids in state["cache"].items() if ids}  # retry misses after an update
     except FileNotFoundError:
         pass
@@ -120,10 +126,15 @@ def resolve(name: str) -> list[str]:
     return ids
 
 
+def all_names() -> list[str]:
+    """Every user's artist names, deduplicated, in upload order. Call with lock held."""
+    return list(dict.fromkeys(n for u in state["users"].values() for n in u["names"]))
+
+
 def worker():
     while True:
         with lock:
-            todo = [n for n in state["names"] if n not in state["cache"]]
+            todo = [n for n in all_names() if n not in state["cache"]]
         if not todo:
             wake.wait()
             wake.clear()
@@ -143,7 +154,7 @@ def worker():
 def mbids() -> list[str]:
     with lock:
         out = []
-        for n in state["names"]:
+        for n in all_names():
             for i in state["cache"].get(n, []):
                 if i not in out:
                     out.append(i)
@@ -182,6 +193,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(404, {"error": "not found"})
         if not self.authed():
             return self.send(401, {"error": "bad or missing token"})
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        user = q.get("user", ["default"])[0].strip().casefold()
+        if not USER.match(user):
+            return self.send(400, {"error": "user must be 1-32 letters, digits, - or _"})
         length = int(self.headers.get("Content-Length", 0))
         if length > 20_000_000:
             return self.send(413, {"error": "too large"})
@@ -191,11 +206,10 @@ class Handler(BaseHTTPRequestHandler):
             print(f"empty ingest: {length} bytes, {ctype!r}, starts {body[:80]!r}", flush=True)
             return self.send(400, {"error": "no artist names in body", "bytes": length, "content_type": ctype})
         with lock:
-            state["names"] = names
-            state["last_ingest"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            state["users"][user] = {"names": names, "last_ingest": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())}
             save()
         wake.set()
-        self.send(200, {"received": len(names)})
+        self.send(200, {"user": user, "received": len(names)})
 
     def log_message(self, fmt, *args):
         if "/healthz" not in self.path:
@@ -204,16 +218,18 @@ class Handler(BaseHTTPRequestHandler):
 
 def status_page() -> str:
     with lock:
-        names, cache, last = list(state["names"]), dict(state["cache"]), state["last_ingest"]
+        names, cache = all_names(), dict(state["cache"])
+        users = {u: (len(d["names"]), d["last_ingest"]) for u, d in sorted(state["users"].items())}
     pending = [n for n in names if n not in cache]
     missing = sorted(n for n in names if cache.get(n) == [])
     rows = "".join(f"<li>{html.escape(n)}</li>" for n in missing)
+    people = "".join(f"<tr><td>{html.escape(u)}</td><td>{c}</td><td>{html.escape(t or 'never')}</td></tr>" for u, (c, t) in users.items())
     return f"""<!doctype html><meta name=viewport content="width=device-width">
 <title>Apple Music → Lidarr</title>
 <style>body{{font:15px system-ui;max-width:40em;margin:2em auto;padding:0 1em}}</style>
 <h1>Apple Music → Lidarr</h1>
-<p>Last upload: <b>{html.escape(last or "never")}</b><br>
-Artists received: <b>{len(names)}</b><br>
+<table><tr><th align=left>User</th><th align=left>Artists</th><th align=left>Last upload</th></tr>{people or "<tr><td colspan=3>No uploads yet</td></tr>"}</table>
+<p>Artists, all users combined: <b>{len(names)}</b><br>
 Matched on MusicBrainz: <b>{len(mbids())}</b><br>
 Still looking up: <b>{len(pending)}</b> (about {len(pending) * 1.5 / 60:.0f} min)<br>
 No match: <b>{len(missing)}</b></p>
