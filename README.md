@@ -24,6 +24,7 @@ iPhone Shortcut ──POST artist names──▶ this container ──▶ MusicB
 - **Reports:** per-person artist counts, last upload (flags phones that stopped syncing), upload history with added/removed artists, and the names MusicBrainz couldn't match.
 - **Good matching:** handles typographic punctuation (`Ne‐Yo`, `D’Angelo`), `$` (`Ke$ha`), spacing (`Cee Lo Green` → `CeeLo Green`) and collaborations (`A & B`, `A feat. B`).
 - **Tiny:** one Python file, standard library only, ~75 MB image for `amd64` and `arm64`.
+- **Runs anywhere:** Docker / Compose, [Unraid](#run-it) and [CasaOS](#run-it) templates included.
 
 ## Quick start
 
@@ -57,13 +58,16 @@ volumes:
   data:
 ```
 
-Prefer a host folder? Use `./data:/data` and `chown 1000:1000 ./data` first (the app runs as uid 1000).
+Prefer a host folder? `./data:/data` works as is: the container starts as root only long enough to give `/data` to `PUID:PGID` (default `1000:1000`), then drops root before doing anything else. Set `PUID`/`PGID` to match your other apps, or run with `user: 1000:1000` and skip that step entirely.
 
-**Unraid:** a template is in [`unraid/applemusic-lidarr-sync.xml`](unraid/applemusic-lidarr-sync.xml) (Docker → Add Container → Template URL: `https://raw.githubusercontent.com/egamer24/applemusic-lidarr-sync/main/unraid/applemusic-lidarr-sync.xml`). Create and `chown 1000:1000` the appdata folder before the first start.
+**Unraid:** a template is in [`unraid/applemusic-lidarr-sync.xml`](unraid/applemusic-lidarr-sync.xml) (Docker → Add Container → Template URL: `https://raw.githubusercontent.com/egamer24/applemusic-lidarr-sync/main/unraid/applemusic-lidarr-sync.xml`). It runs as `99:100` (nobody:users) like other Unraid apps.
+
+**CasaOS:** App Store → **Custom Install** → **Import** (top right) and paste [`casaos/docker-compose.yml`](casaos/docker-compose.yml). Data goes to `/DATA/AppData/applemusic-lidarr-sync/data`; the setup code is in the app's logs.
 
 | Variable | Default | |
 |---|---|---|
 | `TOKEN` | generated | API token for Lidarr's `/list` (and admin uploads). If unset, one is generated and stored in `state.json`; the GUI shows the full Lidarr URL either way |
+| `PUID` / `PGID` | `1000` | User and group the app runs as; it takes ownership of `/data` on start. `0` is refused |
 | `RESET_ADMIN` | off | `true` deletes the admin account on start so you can run setup again (forgotten password). Remove it afterwards |
 | `PORT` | `8080` | Port inside the container |
 | `DATA_DIR` | `/data` | Where `state.json` (artist list + lookup cache) lives |

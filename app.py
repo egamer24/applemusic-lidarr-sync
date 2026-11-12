@@ -796,7 +796,25 @@ class Handler(BaseHTTPRequestHandler):
             print(re.sub(r"token=[^ &]*", "token=***", f"{self.address_string()} {fmt % args}"), flush=True)
 
 
+def drop_privileges():
+    """Started as root (CasaOS, Unraid, plain `docker run`): give DATA to PUID:PGID, then run as them."""
+    if os.getuid() != 0:
+        return  # already unprivileged, e.g. `user: 1000:1000`
+    uid, gid = int(os.environ.get("PUID", "1000")), int(os.environ.get("PGID", "1000"))
+    if uid == 0:
+        raise SystemExit("PUID=0 would run the web server as root; pick an unprivileged user")
+    os.makedirs(DATA, exist_ok=True)
+    for root, dirs, files in os.walk(DATA):
+        for name in [root, *(os.path.join(root, n) for n in dirs + files)]:
+            os.lchown(name, uid, gid)
+    os.setgroups([])
+    os.setgid(gid)
+    os.setuid(uid)
+    print(f"running as {uid}:{gid}", flush=True)
+
+
 if __name__ == "__main__":
+    drop_privileges()
     os.umask(0o077)  # state.json holds password hash, 2FA secret and signing key
     os.makedirs(DATA, exist_ok=True)
     try:

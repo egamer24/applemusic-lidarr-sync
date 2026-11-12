@@ -1,0 +1,71 @@
+# CasaOS: App Store → Custom Install → Import (top right) → paste this file.
+name: applemusic-lidarr-sync
+services:
+  applemusic-lidarr-sync:
+    image: ghcr.io/egamer24/applemusic-lidarr-sync:latest
+    container_name: applemusic-lidarr-sync
+    restart: unless-stopped
+    environment:
+      PUID: $PUID
+      PGID: $PGID
+      TZ: $TZ
+    ports:
+      - target: 8080
+        published: "8099"
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: /DATA/AppData/$AppID/data
+        target: /data
+    x-casaos:
+      envs:
+        - container: PUID
+          description:
+            en_us: User the app runs as (it owns the data folder)
+        - container: PGID
+          description:
+            en_us: Group the app runs as
+        - container: TZ
+          description:
+            en_us: Time zone
+      ports:
+        - container: "8080"
+          description:
+            en_us: Web admin, /ingest for phones, /list for Lidarr
+      volumes:
+        - container: /data
+          description:
+            en_us: Users, artist lists, lookup cache and admin account (state.json). Back it up.
+
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: applemusic-lidarr-sync
+  author: egamer24
+  developer: egamer24
+  category: Media
+  icon: https://raw.githubusercontent.com/egamer24/applemusic-lidarr-sync/main/docs/icon.png
+  screenshot_link:
+    - https://raw.githubusercontent.com/egamer24/applemusic-lidarr-sync/main/docs/dashboard-dark.png
+    - https://raw.githubusercontent.com/egamer24/applemusic-lidarr-sync/main/docs/user-dark.png
+    - https://raw.githubusercontent.com/egamer24/applemusic-lidarr-sync/main/docs/mobile-dashboard.png
+  thumbnail: https://raw.githubusercontent.com/egamer24/applemusic-lidarr-sync/main/docs/dashboard-dark.png
+  title:
+    en_us: Apple Music → Lidarr
+  tagline:
+    en_us: Keep Lidarr following your Apple Music library
+  description:
+    en_us: |
+      An iPhone Shortcut sends your Apple Music library's artist names to this app every night.
+      It matches them on MusicBrainz and serves them to Lidarr as a Custom List, so artists you
+      add in Apple Music show up in Lidarr on their own. No Mac, no Apple Developer account, and
+      nothing signs in to your Apple ID. Several people can share one server.
+  tips:
+    before_install:
+      en_us: |
+        After install, open the app and create the admin account. The one-time setup code is in
+        the app's log (CasaOS: app menu → Logs, or `docker logs applemusic-lidarr-sync`).
+        Full guide: https://github.com/egamer24/applemusic-lidarr-sync
+  index: /
+  port_map: "8099"
