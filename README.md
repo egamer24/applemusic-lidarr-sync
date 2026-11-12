@@ -66,6 +66,84 @@ Tokens go in `Authorization: Bearer <token>` or `?token=<token>`.
 
 MusicBrainz allows about one lookup per second, so the first upload of a big library takes a while (the status page shows an estimate). Results are cached, so later uploads only look up new names.
 
+## Access and remote use
+
+### Who needs to reach what
+
+| Path | Used by | Needs to be reachable from |
+|---|---|---|
+| `/ingest` | each iPhone's Shortcut | wherever the phone is when the automation runs |
+| `/shortcut` | new users installing the Shortcut | their phone, once |
+| `/`, `/login`, `/account`, `/u/…` | you (admin GUI) | wherever you manage it from; LAN is enough for most people |
+| `/list` | Lidarr | **LAN only** (Lidarr runs next to it) |
+| `/healthz` | monitoring | wherever your monitor runs |
+
+How each one is protected:
+
+- `/ingest` needs a user's token in the `Authorization` header. A token can only replace that user's own artist list. It can't read anything, open the GUI or touch other users.
+- The GUI needs the admin username, password and (if on) a 2FA code, with a lockout after 10 failures in 15 minutes.
+- `/list` needs the API token. Lidarr can only send it in the URL, which is why it should stay on the LAN.
+- `/shortcut` and `/healthz` are public on purpose; the Shortcut file contains no URL or token.
+
+### Pick a way to reach it
+
+**1. LAN only (simplest).** Don't expose it. Set each phone's automation for a time it's normally at home on Wi-Fi (e.g. 3 AM, charging), with the URL `http://<LAN-address>:8099/ingest`. A run while away from home just fails and the next night catches up. Fine for one household.
+
+**2. VPN (most private).** Put the server and the phones on Tailscale, WireGuard, or your router's VPN, and use the VPN address in the Shortcut. Nothing is on the public internet. iOS VPNs must be connected (or on-demand) when the automation runs; Tailscale's always-on mode works well.
+
+**3. Reverse proxy with HTTPS (best for remote users without a VPN).** Put it behind Caddy, Nginx Proxy Manager, Traefik or plain nginx with a real certificate. Recommended:
+
+- **Always HTTPS.** Tokens and passwords travel in headers and forms; plain HTTP over the internet exposes them. Turn on "force SSL" / HTTP→HTTPS redirect.
+- **Pass `X-Forwarded-Proto` and `Host`** (all the proxies above do by default). The app uses them to mark sign-in cookies `Secure` and to show the right URLs.
+- **Only expose what remote phones need**: `/ingest`, `/shortcut`, `/healthz`. Keep the GUI and `/list` LAN-only unless you need to manage it remotely (it's protected by password + 2FA if you do).
+- **Never put a token in a link through the proxy.** Proxies log full URLs; that's why Lidarr should use the LAN address.
+- **Turn on 2FA** under Account before exposing the GUI.
+
+Caddy, exposing only what phones need and keeping the rest LAN-only:
+
+```caddyfile
+music.example.com {
+    @phones path /ingest /shortcut /healthz
+    handle @phones {
+        reverse_proxy applemusic-lidarr-sync:8080
+    }
+    @lan remote_ip private_ranges
+    handle @lan {
+        reverse_proxy applemusic-lidarr-sync:8080
+    }
+    respond 404
+}
+```
+
+Plain nginx (or Nginx Proxy Manager's **Advanced** tab), same idea:
+
+```nginx
+location ~ ^/(ingest|shortcut|healthz)$ {
+    proxy_pass http://applemusic-lidarr-sync:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    client_max_body_size 20m;
+}
+location / {
+    allow 10.0.0.0/8; allow 172.16.0.0/12; allow 192.168.0.0/16; deny all;
+    proxy_pass http://applemusic-lidarr-sync:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+If you'd rather expose everything (simplest NPM setup: one proxy host, scheme `http`, forward to the container, request a Let's Encrypt certificate, Force SSL on), that works too; the GUI is behind password + 2FA and `/list` still needs the API token. Just don't point Lidarr at the public address.
+
+**4. Cloudflare Tunnel.** Works without opening ports. Two catches: Cloudflare Access login pages block the Shortcut (it can't sign in), so either leave `/ingest` and `/shortcut` outside Access, or create an Access **service token** and add its `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers to the Shortcut's **Get Contents of URL** action. And keep `/list` off the tunnel; Lidarr should use the LAN address.
+
+### Remote users checklist
+
+1. Add them in the GUI and send them their token privately (password manager share, Signal, etc.), not in a group chat or email thread.
+2. They install the Shortcut from `https://<your-host>/shortcut`, enter `https://<your-host>/ingest` and their token.
+3. They turn on **Allow Sharing Large Amounts of Data** and set a daily automation.
+4. Watch their row on the dashboard: the last-upload badge turns amber after 36 hours without an upload.
+5. If a phone is lost or a token leaks: open the user, **Regenerate token**. The old one stops working at once.
+
 ## Several people, one server
 
 Add each person in the web GUI and give them their own token. An upload only replaces that person's list, and `/list` gives Lidarr everyone's artists combined (each artist once), so one Lidarr Custom List covers the whole household.
@@ -87,24 +165,24 @@ Add each person in the web GUI and give them their own token. An upload only rep
    - Headers: `Authorization` = `Bearer <your token>`
    - Request Body: **File** → *Combined Text*
 
-Run it once and open the status page to check. iOS blocks Shortcuts from sending more than a few hundred items until you turn on **Settings → Apps → Shortcuts → Advanced → Allow Sharing Large Amounts of Data**.
+Run it once and check the user's page in the web GUI (last upload, artist count). iOS blocks Shortcuts from sending more than a few hundred items until you turn on **Settings → Apps → Shortcuts → Advanced → Allow Sharing Large Amounts of Data**.
 
 Then in **Automation → New Automation → Time of Day**, choose daily and **Run Immediately**, and pick this Shortcut.
 
-The phone has to reach the container when the automation runs. Either it runs while you're on home Wi-Fi, or you put the container behind a reverse proxy with HTTPS (only `/ingest` needs to be reachable from outside, and the token protects it).
+The phone has to reach `/ingest` when the automation runs; see [Access and remote use](#access-and-remote-use).
 
 ## Add it to Lidarr
 
 **Settings → Import Lists → + → Custom List**
 
-- List URL: `http://<container-host>:8099/list?token=<your token>`
+- List URL: `http://<container-LAN-address>:8099/list?token=<API token>` (the dashboard's **Copy Lidarr list URL** button gives you this; swap in the LAN address if it shows your public one)
 - Pick the root folder, quality profile and monitoring you want for new artists.
 
 Lidarr refreshes custom lists every 6 hours at most. Removing an artist from your library drops it from the list but doesn't delete it from Lidarr unless you set Lidarr's "List Clean Library Level".
 
 ## Limits
 
-- Artists are matched by name only. When several artists share a name, MusicBrainz's best match wins, which is usually the well-known one. Check the status page's "No match" list for names to fix in Lidarr by hand.
+- Artists are matched by name only. When several artists share a name, MusicBrainz's best match wins, which is usually the well-known one. Check the GUI's "No match" list for names to fix in Lidarr by hand.
 - Collaborations like `A & B` or `A feat. B` are looked up as a whole first, then split into parts.
 
 ## Development
