@@ -93,5 +93,12 @@ def test_lockout():
     app._fails.clear()
 
 
+def test_setup_code():
+    assert app.setup_code("https://m.example.com", "abc") == "https://m.example.com/ingest abc"
+    assert app.URL_RE.fullmatch("https://m.example.com") and app.URL_RE.fullmatch("http://192.168.1.4:8099")
+    assert app.URL_RE.fullmatch("https://example.com/music")
+    assert not app.URL_RE.fullmatch("ftp://x") and not app.URL_RE.fullmatch("https://a b") and not app.URL_RE.fullmatch("javascript:alert(1)")
+
+
 if __name__ == "__main__":
-    test_parse_names(); test_pick(); test_split(); test_users(); test_ingest_history(); test_password(); test_totp(); test_cookies(); test_lockout(); print("ok")
+    test_parse_names(); test_pick(); test_split(); test_users(); test_ingest_history(); test_password(); test_totp(); test_cookies(); test_lockout(); test_setup_code(); print("ok")

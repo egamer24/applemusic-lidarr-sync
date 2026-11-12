@@ -3,7 +3,7 @@ shortcuts sign --mode anyone -i shortcut/unsigned.shortcut -o "shortcut/Sync to 
 """
 import plistlib, uuid, os
 
-TOKEN, FIND, ARTISTS, COMBINED = (str(uuid.uuid4()).upper() for _ in range(4))
+SETUP, SPLIT, URL, TOKEN, FIND, ARTISTS, COMBINED = (str(uuid.uuid4()).upper() for _ in range(7))
 
 
 def out(u, name):
@@ -19,22 +19,29 @@ def text(s, attachments=None):
 
 
 actions = [
-    # 0: token (asked on import)
+    # 0: setup code from the admin page, "<url>/ingest <token>" (asked on import)
     {"WFWorkflowActionIdentifier": "is.workflow.actions.gettext",
-     "WFWorkflowActionParameters": {"UUID": TOKEN, "WFTextActionText": text("PASTE-TOKEN-HERE")}},
-    # 1: all music in the library (add a filter in the Shortcuts app to narrow it)
+     "WFWorkflowActionParameters": {"UUID": SETUP, "WFTextActionText": text("PASTE-SETUP-CODE-HERE")}},
+    # 1-3: split it into the upload URL and the token
+    {"WFWorkflowActionIdentifier": "is.workflow.actions.text.split",
+     "WFWorkflowActionParameters": {"UUID": SPLIT, "text": var(SETUP, "Text"), "WFTextSeparator": "Spaces"}},
+    {"WFWorkflowActionIdentifier": "is.workflow.actions.getitemfromlist",
+     "WFWorkflowActionParameters": {"UUID": URL, "WFInput": var(SPLIT, "Split Text"), "WFItemSpecifier": "First Item"}},
+    {"WFWorkflowActionIdentifier": "is.workflow.actions.getitemfromlist",
+     "WFWorkflowActionParameters": {"UUID": TOKEN, "WFInput": var(SPLIT, "Split Text"), "WFItemSpecifier": "Last Item"}},
+    # 4: all music in the library (add a filter in the Shortcuts app to narrow it)
     {"WFWorkflowActionIdentifier": "is.workflow.actions.filter.music",
      "WFWorkflowActionParameters": {"UUID": FIND}},
-    # 2: album artist of each song
+    # 5: album artist of each song
     {"WFWorkflowActionIdentifier": "is.workflow.actions.properties.music",
      "WFWorkflowActionParameters": {"UUID": ARTISTS, "WFInput": var(FIND, "Music"), "WFContentItemPropertyName": "Album Artist"}},
-    # 3: one per line
+    # 6: one per line
     {"WFWorkflowActionIdentifier": "is.workflow.actions.text.combine",
      "WFWorkflowActionParameters": {"UUID": COMBINED, "text": var(ARTISTS, "Album Artist"), "WFTextSeparator": "New Lines"}},
-    # 4: POST to /ingest (URL asked on import)
+    # 7: POST to the URL from the setup code, with its token
     {"WFWorkflowActionIdentifier": "is.workflow.actions.downloadurl",
      "WFWorkflowActionParameters": {
-         "WFURL": "https://your-host/ingest",
+         "WFURL": text("\ufffc", {"{0, 1}": out(URL, "Item from List")}),
          "WFHTTPMethod": "POST",
          "WFHTTPBodyType": "File",
          "WFRequestVariable": var(COMBINED, "Combined Text"),
@@ -42,7 +49,7 @@ actions = [
          "WFHTTPHeaders": {"Value": {"WFDictionaryFieldValueItems": [{
              "WFItemType": 0,
              "WFKey": text("Authorization"),
-             "WFValue": text("Bearer ￼", {"{7, 1}": out(TOKEN, "Text")}),
+             "WFValue": text("Bearer \ufffc", {"{7, 1}": out(TOKEN, "Item from List")}),
          }]}, "WFSerializationType": "WFDictionaryFieldValue"},
      }},
 ]
@@ -57,10 +64,8 @@ shortcut = {
     "WFWorkflowOutputContentItemClasses": [],
     "WFWorkflowHasShortcutInputVariables": False,
     "WFWorkflowImportQuestions": [
-        {"ActionIndex": 4, "Category": "Parameter", "ParameterKey": "WFURL",
-         "DefaultValue": "https://your-host/ingest", "Text": "Your applemusic-lidarr-sync URL, ending in /ingest"},
-        {"ActionIndex": 0, "Category": "Parameter", "ParameterKey": "WFTextActionText",
-         "DefaultValue": "", "Text": "Your TOKEN (from the container's environment)"},
+        {"ActionIndex": 0, "Category": "Parameter", "ParameterKey": "WFTextActionText", "DefaultValue": "",
+         "Text": "Paste your setup code (from the admin page: Users → your name)"},
     ],
     "WFWorkflowActions": actions,
 }

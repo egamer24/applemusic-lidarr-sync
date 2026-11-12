@@ -2,6 +2,13 @@
 
 Versions follow [semantic versioning](https://semver.org): **patch** (1.0.**1**) for fixes, docs and packaging; **minor** (1.**1**.0) for new features that don't change existing setups; **major** (**2**.0.0) for changes that need you to change your setup. Each release is published as `ghcr.io/egamer24/applemusic-lidarr-sync:<version>`, `:<major>.<minor>` and `:latest`.
 
+## 1.1.0
+
+- **Settings page** with an external URL (phones away from home) and an internal URL (home network).
+- **Setup codes:** creating or regenerating a user's token shows a one-line setup code (`<url>/ingest <token>`) for each address, with copy buttons. The Shortcut now asks only for that code and splits it itself, so nobody types an address.
+- The dashboard's Lidarr list URL uses the internal URL when set, so the API token stays on your home network.
+- Shortcuts installed before 1.1.0 keep working unchanged.
+
 ## 1.0.2
 
 - Fix the container health check: it asked `localhost`, which resolves to IPv6 `::1` in many containers while the app listens on IPv4, so Docker/CasaOS showed the container as *unhealthy* even though it worked.

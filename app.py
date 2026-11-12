@@ -26,7 +26,7 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "1.0.2"  # MAJOR.MINOR.PATCH; the release tag must be v + this (CI checks)
+VERSION = "1.1.0"  # MAJOR.MINOR.PATCH; the release tag must be v + this (CI checks)
 TOKEN = os.environ.get("TOKEN", "")  # API token (Lidarr /list); generated and kept in state.json when unset
 RESET_ADMIN = os.environ.get("RESET_ADMIN", "").lower() in ("1", "true", "yes")
 SETUP_CODE = secrets.token_hex(4)  # printed to the log while no admin exists
@@ -331,7 +331,7 @@ def esc(s) -> str:
 
 
 def page(title: str, body: str, nav: bool = True) -> str:
-    head = ('<header><a href="/">Apple Music → Lidarr</a><div class=row><a href="/account" class=mute>Account</a>'
+    head = ('<header><a href="/">Apple Music → Lidarr</a><div class=row><a href="/settings" class=mute>Settings</a><a href="/account" class=mute>Account</a>'
             '<form class=inline method=post action=/logout><button class=ghost>Sign out</button></form></div></header>') if nav else ""
     return (f"<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
             f"<title>{esc(title)}</title><style>{CSS}</style>{head}<main>{body}<footer class=mute style='margin:24px 0 8px;text-align:center'>"
@@ -353,13 +353,49 @@ def base_url(h) -> str:
     return f"{h.headers.get('X-Forwarded-Proto', 'http')}://{h.headers.get('Host', 'localhost')}"
 
 
+URL_RE = re.compile(r"https?://[^\s/?#]+(/[^\s?#]*)?")
+
+
+def site_urls(h) -> tuple[str, str]:
+    """(external, internal) base URLs from Settings; external falls back to the address in use."""
+    with lock:
+        cfg = dict(state.get("settings", {}))
+    return cfg.get("external_url") or base_url(h), cfg.get("internal_url", "")
+
+
+def setup_code(base: str, token: str) -> str:
+    """What the Shortcut asks for on import: the /ingest URL and the token, separated by a space."""
+    return f"{base}/ingest {token}"
+
+
+def settings_page(msg: str = "", ok: bool = False) -> str:
+    with lock:
+        cfg = dict(state.get("settings", {}))
+    note = f"<p class={'ok' if ok else 'warn'}>{esc(msg)}</p>" if msg else ""
+    return page("Settings", f"""{FORM_CSS}<p><a href="/">← Overview</a></p>{note}
+<div class=card style="max-width:620px"><h2>Addresses</h2>
+<p class=mute>Used to build each user's <b>setup code</b> for the iPhone Shortcut and the Lidarr list URL,
+so nobody has to type an address.</p>
+<form method=post action=/settings class=stack>
+<label>External URL, for phones away from home (e.g. <code>https://music.example.com</code>)
+<input name=external_url type=url value="{esc(cfg.get('external_url', ''))}" placeholder="https://music.example.com" autocapitalize=none></label>
+<label>Internal URL, on your home network (e.g. <code>http://192.168.1.10:8099</code>). Lidarr uses this one.
+<input name=internal_url type=url value="{esc(cfg.get('internal_url', ''))}" placeholder="http://192.168.1.10:8099" autocapitalize=none></label>
+<button>Save</button></form>
+<p class=mute>Leave one empty if you don't use it. Without an external URL, the address you're using right now is used.</p></div>""")
+
+
 def dashboard(h) -> str:
     with lock:
         cache = dict(state["cache"])
         users = {u: (list(d["names"]), d["last_ingest"]) for u, d in sorted(state["users"].items())}
         names = all_names()
     tot = stats(names, cache)
-    lidarr_url = f"{base_url(h)}/list?token={TOKEN}"
+    external, internal = site_urls(h)
+    lidarr_url = f"{internal or external}/list?token={TOKEN}"
+    lidarr_note = ("Uses your internal URL, so the token stays on your home network." if internal else
+                   "The URL contains the API token. Set your <b>internal URL</b> in <a href='/settings'>Settings</a> "
+                   "so Lidarr uses your home network and the token never passes through a reverse proxy's logs.")
     rows = ""
     for u, (n, last) in users.items():
         s = stats(n, cache)
@@ -384,8 +420,7 @@ def dashboard(h) -> str:
 <div class=mute style="margin-top:6px">Letters, digits, - and _. Each user gets their own token for their phone.</div></div>
 <div class=card><h2>Lidarr</h2>
 <p class=mute>Settings → Import Lists → + → Custom List, with this as the List URL. It combines every user.
-The URL contains the API token: if Lidarr is on your LAN, swap the host for the container's LAN address
-(e.g. <code>http://192.168.x.x:8099</code>) so the token never passes through a reverse proxy's logs.</p>
+{lidarr_note}</p>
 <div class=row><button class=ghost data-copy="{esc(lidarr_url)}">Copy Lidarr list URL</button>
 <a href="/list">View list JSON</a></div></div>
 <div class=card><h2>No match on MusicBrainz ({len(tot['unmatched'])})</h2>
@@ -406,14 +441,21 @@ def user_page(h, user: str, new_token: str | None = None) -> str:
         names, last, hist, has_tok = list(d["names"]), d["last_ingest"], list(d["history"]), bool(d["token_hash"])
         cache = dict(state["cache"])
     s = stats(names, cache)
-    ingest_url = f"{base_url(h)}/ingest"
+    external, internal = site_urls(h)
+    ingest_url = f"{external}/ingest"
     tok = ""
     if new_token:
-        tok = f"""<div class=card><h2>Token for {esc(user)}</h2>
-<p class=warn>Shown only once. Copy it now; you can always generate a new one.</p>
-<div class=secret>{esc(new_token)}</div>
-<div class=row style="margin-top:10px"><button data-copy="{esc(new_token)}">Copy token</button>
-<button class=ghost data-copy="{esc(ingest_url)}">Copy Shortcut URL</button></div></div>"""
+        codes = [("Away from home", external)] + ([("Home network only", internal)] if internal else [])
+        rows = "".join(f"""<p style="margin:12px 0 4px"><b>{label}</b></p><div class=secret>{esc(setup_code(base, new_token))}</div>
+<div class=row style="margin-top:6px"><button data-copy="{esc(setup_code(base, new_token))}">Copy setup code</button></div>"""
+                       for label, base in codes)
+        hint = "" if internal or state.get("settings", {}).get("external_url") else \
+            "<p class=mute>Set your addresses in <a href='/settings'>Settings</a> to get the right URL in here.</p>"
+        tok = f"""<div class=card><h2>Setup code for {esc(user)}</h2>
+<p class=warn>Shown only once. Send it to {esc(user)} privately; you can always generate a new one.</p>
+<p class=mute>Paste it when the Shortcut asks on import. It holds the upload address and {esc(user)}'s token.</p>
+{rows}{hint}<details style="margin-top:10px"><summary class=mute>Token on its own</summary>
+<div class=secret>{esc(new_token)}</div></details></div>"""
     tok_state = ("Has a personal token." if has_tok else
                  "Uses the API token (TOKEN) with no ?user. Generate a personal token to switch." if user == "default" else "No token yet.")
     hist_rows = "".join(
@@ -434,8 +476,7 @@ def user_page(h, user: str, new_token: str | None = None) -> str:
 </div>{tok}
 <div class=card><h2>Phone setup</h2>
 <ol><li><a href="/shortcut">Download the Shortcut</a> on the iPhone and tap <b>Add Shortcut</b>.</li>
-<li>URL: <code>{esc(ingest_url)}</code> <button class=ghost data-copy="{esc(ingest_url)}">Copy</button></li>
-<li>Token: this user's token. {esc(tok_state)}</li>
+<li>When it asks, paste this user's <b>setup code</b> (shown once when you generate a token below). {esc(tok_state)}</li>
 <li>iPhone Settings → Apps → Shortcuts → Advanced → <b>Allow Sharing Large Amounts of Data</b> (iOS 17 and earlier: Settings → Shortcuts → Advanced). Without it iOS blocks big libraries.</li>
 <li>Shortcuts → Automation → Time of Day → daily → run <b>Sync to Lidarr</b>.</li></ol>
 <div class=row><form class=inline method=post action="/u/{esc(user)}/token"><button>{'Regenerate' if has_tok else 'Generate'} token</button></form>
@@ -632,6 +673,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.redirect("/") if self.is_admin() else self.html(login_page())
         if not self.is_admin():
             return self.redirect("/login")
+        if path == "/settings":
+            return self.html(settings_page())
         if path == "/account":
             return self.html(account_page("Password changed." if "changed" in self.query() else "", ok=True))
         if path == "/":
@@ -708,6 +751,18 @@ class Handler(BaseHTTPRequestHandler):
             return self.sign_in("/account?changed=1")
         if path.startswith("/account/2fa/"):
             return self.two_factor_settings(path.rsplit("/", 1)[1], self.form())
+        if path == "/settings":
+            f = self.form()
+            new = {}
+            for k in ("external_url", "internal_url"):
+                v = f.get(k, "").strip().rstrip("/")
+                if v and not URL_RE.fullmatch(v):
+                    return self.html(settings_page(f"Not a valid http(s) address: {v}"), 400)
+                new[k] = v
+            with lock:
+                state["settings"] = new
+                save()
+            return self.html(settings_page("Saved.", ok=True))
         if path == "/users":
             user = self.form().get("user", "").strip().casefold()
             if not USER.match(user):
