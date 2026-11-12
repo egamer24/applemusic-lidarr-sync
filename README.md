@@ -5,10 +5,10 @@
 </picture>
 
 <p align="center">
-  <a href="https://github.com/egamer24/applemusic-lidarr-sync/releases"><img alt="Release" src="https://img.shields.io/github/v/release/egamer24/applemusic-lidarr-sync?style=for-the-badge&color=e8274a&label=release"></a>
-  <a href="https://github.com/egamer24/applemusic-lidarr-sync/pkgs/container/applemusic-lidarr-sync"><img alt="image" src="https://img.shields.io/badge/image-ghcr.io-c77700?style=for-the-badge&logo=docker&logoColor=white"></a>
-  <img alt="arch" src="https://img.shields.io/badge/arch-amd64%20%7C%20arm64-0b9f5b?style=for-the-badge">
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/egamer24/applemusic-lidarr-sync?style=for-the-badge&color=5e5869"></a>
+  <a href="https://github.com/egamer24/applemusic-lidarr-sync/releases"><img alt="Release" src="https://img.shields.io/github/v/release/egamer24/applemusic-lidarr-sync?style=flat-square&color=e8274a&label=release"></a>
+  <a href="https://github.com/egamer24/applemusic-lidarr-sync/pkgs/container/applemusic-lidarr-sync"><img alt="image" src="https://img.shields.io/badge/image-ghcr.io-c77700?style=flat-square&logo=docker&logoColor=white"></a>
+  <img alt="arch" src="https://img.shields.io/badge/arch-amd64%20%7C%20arm64-0b9f5b?style=flat-square">
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/egamer24/applemusic-lidarr-sync?style=flat-square&color=5e5869"></a>
 </p>
 
 <p align="center">
@@ -113,20 +113,9 @@ volumes:
 
 Prefer a host folder? `./data:/data` works as is: the container starts as root only long enough to give `/data` to `PUID:PGID` (default `1000:1000`), then drops root before doing anything else. Set `PUID`/`PGID` to match your other apps, or run with `user: 1000:1000` and skip that step entirely.
 
-<table>
-<tr>
-<td width="50%" valign="top">
-
 **Unraid:** a template is in [`unraid/applemusic-lidarr-sync.xml`](unraid/applemusic-lidarr-sync.xml) (Docker → Add Container → Template URL: `https://raw.githubusercontent.com/egamer24/applemusic-lidarr-sync/main/unraid/applemusic-lidarr-sync.xml`). It runs as `99:100` (nobody:users) like other Unraid apps.
 
-</td>
-<td width="50%" valign="top">
-
 **CasaOS:** App Store → **Custom Install** → **Import** (top right) and paste [`casaos/docker-compose.yml`](casaos/docker-compose.yml). Data goes to `/DATA/AppData/applemusic-lidarr-sync/data`; the setup code is in the app's logs.
-
-</td>
-</tr>
-</table>
 
 <details open>
 <summary><strong>Environment variables</strong></summary>

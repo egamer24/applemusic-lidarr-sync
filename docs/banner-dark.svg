@@ -28,7 +28,7 @@
     <circle cx="-14" cy="26" r="1" fill="#ffb547"><animate attributeName="opacity" values="0.2;1;0.2" dur="3.4s" repeatCount="indefinite"/></circle>
   </g>
   <text x="420" y="74" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="42" font-weight="800" letter-spacing="-1.5" fill="url(#brand)">applemusic-lidarr-sync</text>
-  <text x="420" y="106" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" fill="#a8a3b3">Your Apple Music artists, followed in Lidarr. Every night, on its own.</text>
+  <text x="420" y="106" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" fill="#a8a3b3">Your Apple Music artists, followed in Lidarr. Every night, on its own.</text>
   <g>
     <path d="M 190 200 L 344 200" stroke="#3a3448" stroke-width="2" fill="none"/>
     <path d="M 190 200 L 344 200" stroke="url(#flow)" stroke-width="2" fill="none" stroke-dasharray="6 10">
@@ -36,7 +36,7 @@
     </path>
     <circle r="5" fill="url(#flow)"><animateMotion path="M 190 200 L 344 200" dur="2.4s" begin="0s" repeatCount="indefinite"/></circle>
     <circle r="11" fill="#ff4f6d" opacity="0.25" filter="url(#soft)"><animateMotion path="M 190 200 L 344 200" dur="2.4s" begin="0s" repeatCount="indefinite"/></circle>
-    <text x="267.0" y="186" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace" font-size="12" fill="#a8a3b3">artist names</text>
+    <text x="267.0" y="186" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace" font-size="14" fill="#a8a3b3">artist names</text>
   </g>
   <g>
     <path d="M 496 200 L 634 200" stroke="#3a3448" stroke-width="2" fill="none"/>
@@ -45,7 +45,7 @@
     </path>
     <circle r="5" fill="url(#flow)"><animateMotion path="M 496 200 L 634 200" dur="2.4s" begin="1.2s" repeatCount="indefinite"/></circle>
     <circle r="11" fill="#ff4f6d" opacity="0.25" filter="url(#soft)"><animateMotion path="M 496 200 L 634 200" dur="2.4s" begin="1.2s" repeatCount="indefinite"/></circle>
-    <text x="565.0" y="186" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace" font-size="12" fill="#a8a3b3">MusicBrainz IDs</text>
+    <text x="565.0" y="186" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace" font-size="14" fill="#a8a3b3">MusicBrainz IDs</text>
   </g>
   <g>
     <rect x="116" y="144" width="68" height="112" rx="14" fill="#1b1824" stroke="#3a3448" stroke-width="2"/>
@@ -67,5 +67,5 @@
       <animateTransform attributeName="transform" type="rotate" from="0 690 200" to="360 690 200" dur="4s" repeatCount="indefinite"/>
     </path>
   </g>
-  <text x="150" y="292" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#f4f2f7">iPhone Shortcut</text><text x="420" y="292" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#f4f2f7">this container</text><text x="690" y="292" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#f4f2f7">Lidarr</text>
+  <text x="150" y="296" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#f4f2f7">iPhone Shortcut</text><text x="420" y="296" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#f4f2f7">this container</text><text x="690" y="296" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#f4f2f7">Lidarr</text>
 </svg>
