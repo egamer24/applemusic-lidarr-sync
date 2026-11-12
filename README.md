@@ -80,7 +80,7 @@ An iPhone Shortcut reads your library on the phone (with Apple's own Shortcuts a
 1. Run the container (below) and open `http://<host>:8099`. Create the admin account with the **setup code** from `docker logs applemusic-lidarr-sync`.
 2. In **Settings**, enter your **external URL** (for phones away from home) and/or **internal URL** (home network; Lidarr uses it). Optional, but then nobody types an address.
 3. **Add user** for each person. Their page shows a **setup code** (upload address + their token, one line) with a copy button. Send it to them privately.
-4. On each iPhone: open `http://<host>:8099/shortcut`, tap **Add Shortcut**, and paste the setup code when it asks. Turn on **Settings → Apps → Shortcuts → Advanced → Allow Sharing Large Amounts of Data**, run it once, then add a daily **Time of Day** automation.
+4. On each iPhone: open the [**iCloud link**](https://www.icloud.com/shortcuts/a183b4816810410580e26dd8f32e3818) (or `http://<host>:8099/shortcut`), tap **Add Shortcut**, and paste the setup code when it asks. Turn on **Settings → Apps → Shortcuts → Advanced → Allow Sharing Large Amounts of Data**, run it once, then add a daily **Time of Day** automation.
 5. In Lidarr: **Settings → Import Lists → + → Custom List**, List URL from the dashboard's **Copy Lidarr list URL** button (it uses your internal URL when set).
 
 > [!TIP]
@@ -257,7 +257,7 @@ If you'd rather expose everything (simplest NPM setup: one proxy host, scheme `h
 ### Remote users checklist
 
 1. Add them in the GUI and send them their token privately (password manager share, Signal, etc.), not in a group chat or email thread.
-2. They install the Shortcut from `https://<your-host>/shortcut`, enter `https://<your-host>/ingest` and their token.
+2. They install the Shortcut from the [iCloud link](https://www.icloud.com/shortcuts/a183b4816810410580e26dd8f32e3818) (or `https://<your-host>/shortcut`) and paste their setup code when it asks.
 3. They turn on **Allow Sharing Large Amounts of Data** and set a daily automation.
 4. Watch their row on the dashboard: the last-upload badge turns amber after 36 hours without an upload.
 5. If a phone is lost or a token leaks: open the user, **Regenerate token**. The old one stops working at once.
@@ -274,7 +274,7 @@ Add each person in the web GUI and give them their own token. An upload only rep
 
 ## The iPhone Shortcut
 
-**Quick way:** open [`shortcut/Sync to Lidarr.shortcut`](shortcut/Sync%20to%20Lidarr.shortcut) on your iPhone and tap **Add Shortcut**. It asks for one thing: your **setup code** from the web GUI (`<url>/ingest <token>`), and splits it into the address and token itself. It's also served by the container at `/shortcut`. It sends every album artist in your library; edit the **Find Music** action to narrow it down.
+**Quick way:** on your iPhone, open the **[iCloud link](https://www.icloud.com/shortcuts/a183b4816810410580e26dd8f32e3818)** and tap **Add Shortcut**. The same Shortcut is in the repo ([`shortcut/Sync to Lidarr.shortcut`](shortcut/Sync%20to%20Lidarr.shortcut)) and served by your own container at `/shortcut`. It asks for one thing: your **setup code** from the web GUI (`<url>/ingest <token>`), and splits it into the address and token itself. It sends every album artist in your library; edit the **Find Music** action to narrow it down.
 
 (`shortcut/build.py` generates it; sign on a Mac with `shortcuts sign --mode anyone`.)
 
