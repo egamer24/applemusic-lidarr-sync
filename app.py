@@ -334,7 +334,7 @@ def page(title: str, body: str, nav: bool = True) -> str:
     head = ('<header><a href="/">Apple Music → Lidarr</a><div class=row><a href="/account" class=mute>Account</a>'
             '<form class=inline method=post action=/logout><button class=ghost>Sign out</button></form></div></header>') if nav else ""
     return (f"<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
-            f"<title>{esc(title)}</title><style>{CSS}</style>{head}<main>{body}<footer class=mute style="margin:24px 0 8px;text-align:center">"
+            f"<title>{esc(title)}</title><style>{CSS}</style>{head}<main>{body}<footer class=mute style='margin:24px 0 8px;text-align:center'>"
             f"<a href='https://github.com/egamer24/applemusic-lidarr-sync/releases' style='color:inherit'>v{VERSION}</a></footer></main>{COPY_JS}</html>")
 
 
