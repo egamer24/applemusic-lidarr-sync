@@ -384,6 +384,12 @@ Only if you set Lidarr's *List Clean Library Level*.
 Set `RESET_ADMIN=true`, restart, set up again, then remove the variable. Users, tokens and lists are kept.
 
 </details>
+<details>
+<summary><strong>Was this built with AI?</strong></summary>
+
+Yes. It was written with an AI coding assistant (Claude). I designed it, reviewed and tested every change, and run it on my own homelab. The tests in `test_app.py` run on every build.
+
+</details>
 
 ## Versions and updates
 
@@ -408,4 +414,4 @@ Releasing: bump `VERSION` in `app.py`, add a CHANGELOG entry, push, then tag `vX
   <img alt="" src="docs/divider-light.svg" width="100%">
 </picture>
 
-<p align="center"><sub>MIT licensed. Not affiliated with or endorsed by Apple, Lidarr or MusicBrainz. Apple Music is a trademark of Apple Inc.</sub></p>
+<p align="center"><sub>MIT licensed. Built with AI assistance (<a href="#faq">FAQ</a>). Not affiliated with or endorsed by Apple, Lidarr or MusicBrainz. Apple Music is a trademark of Apple Inc.</sub></p>
