@@ -318,6 +318,7 @@ button.danger{background:none;color:var(--acc)}form.inline{display:inline}
 .secret{font-family:ui-monospace,monospace;word-break:break-all;background:var(--bg);border:1px dashed var(--line);border-radius:8px;padding:10px}
 .ok{color:var(--ok)}.warn{color:var(--warn)}.pill{font-size:12px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);white-space:nowrap}
 ul.cols{columns:2 220px;padding-left:18px;margin:0}
+@media (max-width:640px){td,th{padding:8px 4px}.pill{white-space:normal;display:inline-block}}
 """
 
 COPY_JS = """<script>document.addEventListener('click',e=>{const b=e.target.closest('[data-copy]');if(!b)return;
@@ -798,8 +799,12 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     os.umask(0o077)  # state.json holds password hash, 2FA secret and signing key
     os.makedirs(DATA, exist_ok=True)
-    if os.path.exists(STATE_FILE):
+    try:
         os.chmod(STATE_FILE, 0o600)
+    except FileNotFoundError:
+        pass
+    except OSError as e:  # e.g. restored by root; the next save rewrites it as ours with 600
+        print(f"warning: can't chmod {STATE_FILE}: {e}", flush=True)
     load()
     state.setdefault("secret", secrets.token_hex(32))
     if not TOKEN:

@@ -1,6 +1,14 @@
 # applemusic-lidarr-sync
 
-Keep [Lidarr](https://lidarr.audio) following the artists in your Apple Music library, without a Mac and without an Apple Developer account.
+**Keep [Lidarr](https://lidarr.audio) following the artists in your Apple Music library.**
+No Mac, no Apple Developer account, and nothing ever signs in to your Apple ID.
+
+An iPhone Shortcut reads your library on the phone (with Apple's own Shortcuts actions) and posts the artist names to this small container every night. The container matches them on MusicBrainz and serves them to Lidarr as a Custom List, so new artists you add in Apple Music show up in Lidarr on their own. One container serves a whole household.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/dashboard-dark.png">
+  <img alt="Dashboard: users, artist counts, matches and last upload" src="docs/dashboard-light.png" width="800">
+</picture>
 
 ```
 iPhone Shortcut ──POST artist names──▶ this container ──▶ MusicBrainz lookup
@@ -8,7 +16,28 @@ iPhone Shortcut ──POST artist names──▶ this container ──▶ MusicB
                          Lidarr "Custom List" ◀┘  GET /list → [{"MusicBrainzId": "..."}]
 ```
 
-An iPhone Shortcut reads your library on the phone, using Apple's own Shortcuts actions, and posts the artist names to this container on a schedule. The container matches each name to a MusicBrainz artist and serves the matches as a Lidarr Custom List. Nothing ever signs in to your Apple account, so it stays within Apple's terms.
+## Features
+
+- **No Apple login, no Mac, no developer account.** The phone sends artist names; that's all. It stays within Apple's terms.
+- **Several people, one Lidarr list.** Each person gets their own token; Lidarr gets everyone's artists combined, each once.
+- **Web admin** with first-run setup, username + password, optional **two-factor** (authenticator app + recovery codes) and a sign-in lockout.
+- **Reports:** per-person artist counts, last upload (flags phones that stopped syncing), upload history with added/removed artists, and the names MusicBrainz couldn't match.
+- **Good matching:** handles typographic punctuation (`Ne‐Yo`, `D’Angelo`), `$` (`Ke$ha`), spacing (`Cee Lo Green` → `CeeLo Green`) and collaborations (`A & B`, `A feat. B`).
+- **Tiny:** one Python file, standard library only, ~75 MB image for `amd64` and `arm64`.
+
+## Quick start
+
+1. Run the container (below) and open `http://<host>:8099`. Create the admin account with the **setup code** from `docker logs applemusic-lidarr-sync`.
+2. **Add user** for each person; copy their token.
+3. On each iPhone: open `http://<host>:8099/shortcut`, tap **Add Shortcut**, enter `http://<host>:8099/ingest` and the token. Turn on **Settings → Apps → Shortcuts → Advanced → Allow Sharing Large Amounts of Data**, run it once, then add a daily **Time of Day** automation.
+4. In Lidarr: **Settings → Import Lists → + → Custom List**, List URL from the dashboard's **Copy Lidarr list URL** button.
+
+Phones away from home? See [Access and remote use](#access-and-remote-use).
+
+<p>
+  <img alt="User page with phone setup and upload history" src="docs/user-dark.png" width="520">
+  <img alt="Dashboard on a phone" src="docs/mobile-dashboard.png" width="240">
+</p>
 
 ## Run it
 
@@ -22,9 +51,13 @@ services:
     ports:
       - "8099:8080"
     volumes:
-      - ./data:/data     # must be writable by uid 1000
+      - data:/data
     restart: unless-stopped
+volumes:
+  data:
 ```
+
+Prefer a host folder? Use `./data:/data` and `chown 1000:1000 ./data` first (the app runs as uid 1000).
 
 | Variable | Default | |
 |---|---|---|
@@ -185,6 +218,24 @@ Lidarr refreshes custom lists every 6 hours at most. Removing an artist from you
 - Artists are matched by name only. When several artists share a name, MusicBrainz's best match wins, which is usually the well-known one. Check the GUI's "No match" list for names to fix in Lidarr by hand.
 - Collaborations like `A & B` or `A feat. B` are looked up as a whole first, then split into parts.
 
+## FAQ
+
+**Does it need my Apple ID or an app-specific password?** No. App-specific passwords only work for iCloud mail, contacts and calendars, and logging in to Apple Music from a server would break Apple's terms. The Shortcut runs on your phone with Apple's own actions and only sends artist names.
+
+**Android / Apple Music on Windows?** Not yet: it relies on iOS Shortcuts. Anything that can POST one artist name per line to `/ingest` with a token works, so other sources are possible.
+
+**The Shortcut says it's "trying to share N Music items, which is not allowed".** Turn on **Settings → Apps → Shortcuts → Advanced → Allow Sharing Large Amounts of Data**.
+
+**It says `no artist names in body`.** Open the Shortcut: in **Get … from Music** and **Combine**, the input must be the previous action's result (blue bubble), not greyed out.
+
+**Will Lidarr download everything?** That's Lidarr's choice, set on the Custom List: *Monitor* (none / specific / entire artist) and *Search for New Items*. Start with *None* if your library is big.
+
+**Why didn't an artist match?** MusicBrainz doesn't have it, or it's a podcast/audiobook. Unmatched names are listed in the GUI; add real ones in Lidarr by hand. Same-name artists resolve to MusicBrainz's best match.
+
+**I removed an artist from Apple Music. Does Lidarr delete it?** Only if you set Lidarr's *List Clean Library Level*.
+
+**Forgot the admin password?** Set `RESET_ADMIN=true`, restart, set up again, then remove the variable. Users, tokens and lists are kept.
+
 ## Development
 
 ```
@@ -192,4 +243,4 @@ docker build -t applemusic-lidarr-sync .
 docker run --rm -v "$PWD:/src" -w /src --entrypoint python applemusic-lidarr-sync test_app.py
 ```
 
-MIT licensed. Not affiliated with Apple, Lidarr or MusicBrainz.
+MIT licensed. Not affiliated with or endorsed by Apple, Lidarr or MusicBrainz. Apple Music is a trademark of Apple Inc.
