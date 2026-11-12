@@ -18,7 +18,7 @@ services:
     image: ghcr.io/egamer24/applemusic-lidarr-sync:latest
     container_name: applemusic-lidarr-sync
     environment:
-      TOKEN: change-me   # long random string, e.g. `openssl rand -hex 24`
+      TOKEN: change-me   # optional; long random string, e.g. `openssl rand -hex 24`
     ports:
       - "8099:8080"
     volumes:
@@ -28,14 +28,17 @@ services:
 
 | Variable | Default | |
 |---|---|---|
-| `TOKEN` | (required) | Admin token: signs in to the web GUI and is what Lidarr uses for `/list` |
+| `TOKEN` | generated | API token for Lidarr's `/list` (and admin uploads). If unset, one is generated and stored in `state.json`; the GUI shows the full Lidarr URL either way |
+| `RESET_ADMIN` | off | `true` deletes the admin account on start so you can run setup again (forgotten password). Remove it afterwards |
 | `PORT` | `8080` | Port inside the container |
 | `DATA_DIR` | `/data` | Where `state.json` (artist list + lookup cache) lives |
 | `MB_USER_AGENT` | project URL | MusicBrainz asks every client to identify itself |
 
 ## Web GUI
 
-Open the container's address and sign in with the admin `TOKEN`. From there you can:
+On first visit the GUI asks you to **set up an admin account** (username + password). Setup also asks for a **setup code** so nobody else can claim the admin account first: it's printed in the container log (`docker logs applemusic-lidarr-sync`), or use your `TOKEN`. After that you sign in with the username and password; **Account** changes the password (and signs out other browsers).
+
+From there you can:
 
 - **Add users.** Each gets a personal token, shown once with copy buttons. Regenerate or delete it any time.
 - **See reports:** totals, each user's artist count, matches and last upload (amber when it's over 36 hours old), plus per-user upload history with the artists that were added or removed, unmatched names, and matched artists linked to MusicBrainz.
@@ -45,9 +48,9 @@ Open the container's address and sign in with the admin `TOKEN`. From there you 
 
 | | Auth | |
 |---|---|---|
-| `POST /ingest` | user token, or admin token + `?user=<name>` (default `default`) | Body: one artist per line, a JSON array, or `{"artists": [...]}`. Replaces that user's list |
-| `GET /list` | admin token | Lidarr Custom List JSON, every user combined |
-| `GET /` | admin (cookie or token) | Web GUI |
+| `POST /ingest` | user token, or API token + `?user=<name>` (default `default`) | Body: one artist per line, a JSON array, or `{"artists": [...]}`. Replaces that user's list |
+| `GET /list` | API token (or signed in) | Lidarr Custom List JSON, every user combined |
+| `GET /` | signed in | Web GUI (`/setup` on first run, `/login`, `/account`) |
 | `GET /shortcut` | none | The iPhone Shortcut |
 | `GET /healthz` | none | Health check |
 

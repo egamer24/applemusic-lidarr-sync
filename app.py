@@ -4,9 +4,10 @@ iPhone Shortcuts POST their library's artist names to /ingest. This server looks
 each one up on MusicBrainz and serves the matches at /list in the format Lidarr's
 "Custom List" import list expects: [{"MusicBrainzId": "..."}].
 
-Several people can share one server. The admin (env TOKEN) signs in to the web
-GUI at / to add users, issue their tokens and see reports. Each user's phone
-uploads with its own token; /list combines everyone.
+Several people can share one server. On first visit the web GUI asks for a setup
+code and creates the admin account (username + password); the admin then adds
+users, issues their tokens and sees reports. Each user's phone uploads with its
+own token; /list (Lidarr) uses the API token and combines everyone.
 """
 import hashlib
 import hmac
@@ -23,7 +24,9 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-TOKEN = os.environ.get("TOKEN", "")
+TOKEN = os.environ.get("TOKEN", "")  # API token (Lidarr /list); generated and kept in state.json when unset
+RESET_ADMIN = os.environ.get("RESET_ADMIN", "").lower() in ("1", "true", "yes")
+SETUP_CODE = secrets.token_hex(4)  # printed to the log while no admin exists
 DATA = os.environ.get("DATA_DIR", "/data")
 PORT = int(os.environ.get("PORT", "8080"))
 UA = os.environ.get(
@@ -72,6 +75,25 @@ def now() -> str:
 
 def hash_token(t: str) -> str:
     return hashlib.sha256(t.encode()).hexdigest()
+
+
+def hash_password(pw: str, salt: str | None = None) -> dict:
+    salt = salt or secrets.token_hex(16)
+    return {"salt": salt, "hash": hashlib.pbkdf2_hmac("sha256", pw.encode(), bytes.fromhex(salt), 600_000).hex()}
+
+
+def check_password(user: str, pw: str) -> bool:
+    a = state.get("admin")
+    if not a or not hmac.compare_digest(user.casefold().encode(), a["user"].encode()):
+        hash_password(pw)  # same work either way
+        return False
+    return hmac.compare_digest(hash_password(pw, a["salt"])["hash"].encode(), a["hash"].encode())
+
+
+def session_for(a: dict) -> str:
+    """Cookie value; changes when the password does, which signs out other browsers."""
+    sig = hmac.new(bytes.fromhex(state["secret"]), f"{a['user']}|{a['hash']}".encode(), hashlib.sha256).hexdigest()
+    return f"{a['user']}:{sig}"
 
 
 # ---------- matching ----------
@@ -232,8 +254,8 @@ def esc(s) -> str:
 
 
 def page(title: str, body: str, nav: bool = True) -> str:
-    head = ('<header><a href="/">Apple Music → Lidarr</a><form class=inline method=post action=/logout>'
-            '<button class=ghost>Sign out</button></form></header>') if nav else ""
+    head = ('<header><a href="/">Apple Music → Lidarr</a><div class=row><a href="/account" class=mute>Account</a>'
+            '<form class=inline method=post action=/logout><button class=ghost>Sign out</button></form></div></header>') if nav else ""
     return (f"<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
             f"<title>{esc(title)}</title><style>{CSS}</style>{head}<main>{body}</main>{COPY_JS}</html>")
 
@@ -313,7 +335,7 @@ def user_page(h, user: str, new_token: str | None = None) -> str:
 <div class=row style="margin-top:10px"><button data-copy="{esc(new_token)}">Copy token</button>
 <button class=ghost data-copy="{esc(ingest_url)}">Copy Shortcut URL</button></div></div>"""
     tok_state = ("Has a personal token." if has_tok else
-                 "Uses the admin token with no ?user (generate a personal one to switch)." if user == "default" else "No token yet.")
+                 "Uses the API token (TOKEN) with no ?user. Generate a personal token to switch." if user == "default" else "No token yet.")
     hist_rows = "".join(
         f"<tr><td>{esc(e['at'])}</td><td>{e['count']}</td>{history_cell(e['added'], e['added_count'], '+')}"
         f"{history_cell(e['removed'], e['removed_count'], '−')}</tr>" for e in hist
@@ -345,12 +367,43 @@ def user_page(h, user: str, new_token: str | None = None) -> str:
 <div class=card><details><summary><b>Matched artists ({s['matched']})</b></summary><ul class=cols>{matched}</ul></details></div>""")
 
 
-def login_page(error: str = "") -> str:
+FORM_CSS = "<style>.stack{display:grid;gap:10px}.stack label{display:grid;gap:4px;font-size:13px;color:var(--mute)}</style>"
+
+
+def auth_page(title: str, inner: str, error: str = "") -> str:
     err = f"<p class=warn>{esc(error)}</p>" if error else ""
-    return page("Sign in", f"""<div class=card style="max-width:420px;margin:10vh auto">
-<h1>Apple Music → Lidarr</h1>{err}
-<form method=post action=/login class=row><input type=password name=token placeholder="Admin token" required autofocus style="flex:1">
-<button>Sign in</button></form><p class=mute>The <code>TOKEN</code> from the container's environment.</p></div>""", nav=False)
+    return page(title, f"""{FORM_CSS}<div class=card style="max-width:420px;margin:8vh auto">
+<h1>Apple Music → Lidarr</h1>{err}{inner}</div>""", nav=False)
+
+
+def login_page(error: str = "") -> str:
+    return auth_page("Sign in", """<form method=post action=/login class=stack>
+<label>Username<input name=user autocomplete=username required autofocus autocapitalize=none></label>
+<label>Password<input type=password name=password autocomplete=current-password required></label>
+<button>Sign in</button></form>""", error)
+
+
+def setup_page(error: str = "") -> str:
+    return auth_page("Set up", """<h2>First-time setup</h2>
+<p class=mute>Create the admin account. The setup code is printed in the container log
+(<code>docker logs</code>); the <code>TOKEN</code> from the container's environment also works.</p>
+<form method=post action=/setup class=stack>
+<label>Setup code<input name=code required autocomplete=off></label>
+<label>Admin username<input name=user autocomplete=username required autocapitalize=none pattern="[A-Za-z0-9_.@\\-]{1,64}"></label>
+<label>Password (at least 10 characters)<input type=password name=password autocomplete=new-password minlength=10 required></label>
+<label>Repeat password<input type=password name=password2 autocomplete=new-password minlength=10 required></label>
+<button>Create admin</button></form>""", error)
+
+
+def account_page(msg: str = "", ok: bool = False) -> str:
+    note = f"<p class={'ok' if ok else 'warn'}>{esc(msg)}</p>" if msg else ""
+    return page("Account", f"""{FORM_CSS}<p><a href="/">← Overview</a></p><div class=card style="max-width:480px">
+<h2>Change password</h2>{note}<p class=mute>Signed in as <b>{esc(state['admin']['user'])}</b>. Changing the password signs out every other browser.</p>
+<form method=post action=/account class=stack>
+<label>Current password<input type=password name=current autocomplete=current-password required></label>
+<label>New password (at least 10 characters)<input type=password name=password autocomplete=new-password minlength=10 required></label>
+<label>Repeat new password<input type=password name=password2 autocomplete=new-password minlength=10 required></label>
+<button>Change password</button></form></div>""")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -364,17 +417,23 @@ class Handler(BaseHTTPRequestHandler):
     def is_admin_token(self, t: str) -> bool:
         return bool(TOKEN) and hmac.compare_digest(t.encode(), TOKEN.encode())
 
-    def session_value(self) -> str:
-        return hmac.new(TOKEN.encode(), b"admin-session", hashlib.sha256).hexdigest()
-
     def is_admin(self) -> bool:
-        if self.is_admin_token(self.given_token()):
-            return True
+        """Signed in to the web GUI (session cookie)."""
+        with lock:
+            a = state.get("admin")
+            want = session_for(a) if a else None
+        if not want:
+            return False
         for part in self.headers.get("Cookie", "").split(";"):
             k, _, v = part.strip().partition("=")
-            if k == "amls" and hmac.compare_digest(v.encode(), self.session_value().encode()):
+            if k == "amls" and hmac.compare_digest(v.encode(), want.encode()):
                 return True
         return False
+
+    def sign_in(self, to: str = "/"):
+        secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
+        cookie = f"amls={session_for(state['admin'])}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000{secure}"
+        self.redirect(to, {"Set-Cookie": cookie})
 
     def send(self, code: int, body, ctype="application/json", headers: dict | None = None):
         data = body if isinstance(body, bytes) else (body if isinstance(body, str) else json.dumps(body)).encode()
@@ -409,14 +468,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(404, {"error": "shortcut not bundled"})
             return self.send(200, data, "application/octet-stream",
                              {"Content-Disposition": 'attachment; filename="Sync to Lidarr.shortcut"'})
-        if path == "/login":
-            return self.html(login_page())
-        if not self.is_admin():
-            if path == "/list":
+        if path == "/list":  # Lidarr: API token
+            if not (self.is_admin_token(self.given_token()) or self.is_admin()):
                 return self.send(401, {"error": "bad or missing token"})
-            return self.redirect("/login")
-        if path == "/list":
             return self.send(200, [{"MusicBrainzId": i} for i in mbids()])
+        if "admin" not in state:
+            return self.html(setup_page()) if path == "/setup" else self.redirect("/setup")
+        if path in ("/login", "/setup"):
+            return self.redirect("/") if self.is_admin() else self.html(login_page())
+        if not self.is_admin():
+            return self.redirect("/login")
+        if path == "/account":
+            return self.html(account_page("Password changed." if "changed" in self.query() else "", ok=True))
         if path == "/":
             return self.html(dashboard(self))
         m = re.fullmatch(r"/u/([a-z0-9_-]{1,32})", path)
@@ -428,17 +491,49 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         if path == "/ingest":
             return self.do_ingest()
+        if path == "/setup":
+            f = self.form()
+            with lock:
+                if "admin" in state:
+                    return self.redirect("/login")
+                code = f.get("code", "").strip()
+                user = f.get("user", "").strip().casefold()
+                pw = f.get("password", "")
+                err = ("Wrong setup code." if not (hmac.compare_digest(code.encode(), SETUP_CODE.encode()) or self.is_admin_token(code))
+                       else "Username: 1–64 letters, digits, . _ - or @." if not re.fullmatch(r"[a-z0-9_.@-]{1,64}", user)
+                       else "Password must be at least 10 characters." if len(pw) < 10
+                       else "Passwords don't match." if pw != f.get("password2", "") else "")
+                if err:
+                    time.sleep(1)
+                    return self.html(setup_page(err), 400)
+                state["admin"] = {"user": user, **hash_password(pw)}
+                save()
+            print(f"admin account '{user}' created", flush=True)
+            return self.sign_in()
         if path == "/login":
-            if self.is_admin_token(self.form().get("token", "").strip()):
-                secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
-                cookie = f"amls={self.session_value()}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000{secure}"
-                return self.redirect("/", {"Set-Cookie": cookie})
+            f = self.form()
+            with lock:
+                ok = check_password(f.get("user", "").strip(), f.get("password", ""))
+            if ok:
+                return self.sign_in()
             time.sleep(1)  # slow down guessing
-            return self.html(login_page("Wrong token."), 401)
+            return self.html(login_page("Wrong username or password."), 401)
         if path == "/logout":
             return self.redirect("/login", {"Set-Cookie": "amls=; Path=/; Max-Age=0"})
         if not self.is_admin():
             return self.redirect("/login")
+        if path == "/account":
+            f = self.form()
+            with lock:
+                a = state["admin"]
+                pw = f.get("password", "")
+                if not check_password(a["user"], f.get("current", "")):
+                    return self.html(account_page("Current password is wrong."), 400)
+                if len(pw) < 10 or pw != f.get("password2", ""):
+                    return self.html(account_page("New passwords must match and be at least 10 characters."), 400)
+                a.update(hash_password(pw))
+                save()
+            return self.sign_in("/account?changed=1")
         if path == "/users":
             user = self.form().get("user", "").strip().casefold()
             if not USER.match(user):
@@ -496,10 +591,16 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    if not TOKEN:
-        raise SystemExit("Set the TOKEN environment variable")
     os.makedirs(DATA, exist_ok=True)
     load()
+    state.setdefault("secret", secrets.token_hex(32))
+    if not TOKEN:
+        TOKEN = state.setdefault("token", secrets.token_hex(24))
+    if RESET_ADMIN and state.pop("admin", None):
+        print("RESET_ADMIN: admin account removed; remove RESET_ADMIN and open the GUI to set up again", flush=True)
+    save()
+    if "admin" not in state:
+        print(f"No admin account yet. Open the web GUI and use setup code: {SETUP_CODE}", flush=True)
     threading.Thread(target=worker, daemon=True).start()
     print(f"listening on :{PORT}", flush=True)
     ThreadingHTTPServer(("", PORT), Handler).serve_forever()

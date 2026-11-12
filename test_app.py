@@ -48,5 +48,15 @@ def test_ingest_history(tmp="/tmp/amls-test"):
     assert h["added"] == ["C"] and h["removed"] == ["A"]
 
 
+def test_password():
+    app.state["admin"] = {"user": "me", **app.hash_password("correct horse")}
+    app.state["secret"] = "00" * 32
+    assert app.check_password("Me", "correct horse")
+    assert not app.check_password("me", "wrong") and not app.check_password("you", "correct horse")
+    before = app.session_for(app.state["admin"])
+    app.state["admin"].update(app.hash_password("new password!"))
+    assert app.session_for(app.state["admin"]) != before
+
+
 if __name__ == "__main__":
-    test_parse_names(); test_pick(); test_split(); test_users(); test_ingest_history(); print("ok")
+    test_parse_names(); test_pick(); test_split(); test_users(); test_ingest_history(); test_password(); print("ok")
