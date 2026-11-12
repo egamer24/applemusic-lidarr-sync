@@ -209,6 +209,8 @@ Run it once and check the user's page in the web GUI (last upload, artist count)
 
 Then in **Automation → New Automation → Time of Day**, choose daily and **Run Immediately**, and pick this Shortcut.
 
+After creating the automation, tap ▶ in it once with the phone unlocked and answer every prompt with **Always Allow**. Otherwise the 3 AM run fails while the phone is locked; see the [FAQ](#faq).
+
 The phone has to reach `/ingest` when the automation runs; see [Access and remote use](#access-and-remote-use).
 
 ## Add it to Lidarr
@@ -237,6 +239,8 @@ Lidarr refreshes custom lists every 6 hours at most. Removing an artist from you
 - iOS 17 and earlier: **Settings → Shortcuts → Advanced**
 
 Confirmed on iOS 27 with a 1,421-song library (the run is blocked and the upload never happens). The switch has been in Shortcuts' Advanced settings across several iOS versions; we haven't pinned down the exact item limit or which versions enforce it, so turn it on whatever version you're on. If you hit it on another iOS version, an issue saying which one helps.
+
+**The automation fails with "This shortcut requires privacy permissions that cannot be granted while your device is locked".** The Shortcut still has a permission set to *Ask* (Apple Music access, or connecting to your server), and iOS can't show the prompt on a locked phone. With the phone unlocked, open the automation, tap ▶, and choose **Always Allow** on every prompt (not *Allow Once*). Then check the Shortcut's ⓘ → **Privacy**: Apple Music and your server's address should both be allowed. Run ▶ once more; if it finishes without a prompt, the nightly run works while the phone is locked.
 
 **It says `no artist names in body`.** Open the Shortcut: in **Get … from Music** and **Combine**, the input must be the previous action's result (blue bubble), not greyed out.
 
