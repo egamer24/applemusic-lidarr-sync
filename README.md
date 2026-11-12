@@ -200,7 +200,7 @@ Add each person in the web GUI and give them their own token. An upload only rep
    - Headers: `Authorization` = `Bearer <your token>`
    - Request Body: **File** → *Combined Text*
 
-Run it once and check the user's page in the web GUI (last upload, artist count). iOS blocks Shortcuts from sending more than a few hundred items until you turn on **Settings → Apps → Shortcuts → Advanced → Allow Sharing Large Amounts of Data**.
+Run it once and check the user's page in the web GUI (last upload, artist count). iOS blocks Shortcuts from sending large libraries until you turn on **Allow Sharing Large Amounts of Data** (Settings → Apps → Shortcuts → Advanced; on iOS 17 and earlier, Settings → Shortcuts → Advanced). See the [FAQ](#faq).
 
 Then in **Automation → New Automation → Time of Day**, choose daily and **Run Immediately**, and pick this Shortcut.
 
@@ -226,7 +226,12 @@ Lidarr refreshes custom lists every 6 hours at most. Removing an artist from you
 
 **Android / Apple Music on Windows?** Not yet: it relies on iOS Shortcuts. Anything that can POST one artist name per line to `/ingest` with a token works, so other sources are possible.
 
-**The Shortcut says it's "trying to share N Music items, which is not allowed".** Turn on **Settings → Apps → Shortcuts → Advanced → Allow Sharing Large Amounts of Data**.
+**The Shortcut says it's "This action is trying to share N Music items, which is not allowed".** iOS caps how many items a Shortcut may send unless you turn on **Allow Sharing Large Amounts of Data**:
+
+- iOS 18 and later: **Settings → Apps → Shortcuts → Advanced**
+- iOS 17 and earlier: **Settings → Shortcuts → Advanced**
+
+Confirmed on iOS 27 with a 1,421-song library (the run is blocked and the upload never happens). The switch has been in Shortcuts' Advanced settings across several iOS versions; we haven't pinned down the exact item limit or which versions enforce it, so turn it on whatever version you're on. If you hit it on another iOS version, an issue saying which one helps.
 
 **It says `no artist names in body`.** Open the Shortcut: in **Get … from Music** and **Combine**, the input must be the previous action's result (blue bubble), not greyed out.
 

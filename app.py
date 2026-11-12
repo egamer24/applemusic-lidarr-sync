@@ -434,7 +434,7 @@ def user_page(h, user: str, new_token: str | None = None) -> str:
 <ol><li><a href="/shortcut">Download the Shortcut</a> on the iPhone and tap <b>Add Shortcut</b>.</li>
 <li>URL: <code>{esc(ingest_url)}</code> <button class=ghost data-copy="{esc(ingest_url)}">Copy</button></li>
 <li>Token: this user's token. {esc(tok_state)}</li>
-<li>iPhone Settings → Apps → Shortcuts → Advanced → <b>Allow Sharing Large Amounts of Data</b>.</li>
+<li>iPhone Settings → Apps → Shortcuts → Advanced → <b>Allow Sharing Large Amounts of Data</b> (iOS 17 and earlier: Settings → Shortcuts → Advanced). Without it iOS blocks big libraries.</li>
 <li>Shortcuts → Automation → Time of Day → daily → run <b>Sync to Lidarr</b>.</li></ol>
 <div class=row><form class=inline method=post action="/u/{esc(user)}/token"><button>{'Regenerate' if has_tok else 'Generate'} token</button></form>
 <form class=inline method=post action="/u/{esc(user)}/delete" onsubmit="return confirm('Delete {esc(user)} and their list? Artists already in Lidarr stay.')"><button class=danger>Delete user</button></form></div>
