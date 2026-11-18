@@ -26,7 +26,7 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "1.2.0"  # MAJOR.MINOR.PATCH; the release tag must be v + this (CI checks)
+VERSION = "1.3.0"  # MAJOR.MINOR.PATCH; the release tag must be v + this (CI checks)
 TOKEN = os.environ.get("TOKEN", "")  # API token (Lidarr /list); generated and kept in state.json when unset
 RESET_ADMIN = os.environ.get("RESET_ADMIN", "").lower() in ("1", "true", "yes")
 SETUP_CODE = secrets.token_hex(4)  # printed to the log while no admin exists
@@ -309,6 +309,31 @@ def ingest(user: str, names: list[str], albums: list[list[str]] | None = None) -
         save()
     wake.set()
     return {"user": user, "received": len(names), "added": len(added), "removed": len(removed)}
+
+
+pending = {}  # user -> parts of a multi-part upload received so far (memory only)
+
+
+def add_part(user: str, part: int, parts: int, names: list[str], albums: list[list[str]]):
+    """Big libraries upload in parts (?part=1&parts=N) because iOS Shortcuts fails reading ~2,500+ songs at
+    once. Returns the merged (names, albums) after the last part, None before it. A part out of order
+    (a run that died halfway) drops the buffer, so the list is only ever replaced by a complete upload."""
+    with lock:
+        if part == 1:
+            pending[user] = {"next": 1, "names": {}, "albums": {}}
+        buf = pending.get(user)
+        if not buf or part != buf["next"]:
+            pending.pop(user, None)
+            raise ValueError(f"expected part {buf['next'] if buf else 1}, got {part}")
+        buf["next"] += 1
+        for n in names:
+            buf["names"].setdefault(n.casefold(), n)
+        for a in albums:
+            buf["albums"].setdefault((a[0].casefold(), a[1].casefold()), a)
+        if part < parts:
+            return None
+        del pending[user]
+        return list(buf["names"].values()), list(buf["albums"].values())
 
 
 # ---------- albums (optional): monitor only the albums in the library ----------
@@ -1000,6 +1025,21 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(413, {"error": "too large"})
         body, ctype = self.rfile.read(length), self.headers.get("Content-Type", "")
         names, albums = parse_upload(body, ctype)
+        q = self.query()
+        if "part" in q:
+            try:
+                part, parts = int(float(q["part"][0])), int(float(q.get("parts", ["0"])[0]))
+            except ValueError:
+                part = parts = 0
+            if not 1 <= part <= parts <= 1000:
+                return self.send(400, {"error": "part and parts must be numbers with 1 <= part <= parts"})
+            try:
+                merged = add_part(user, part, parts, names, albums)
+            except ValueError as e:
+                return self.send(409, {"error": str(e)})
+            if merged is None:
+                return self.send(200, {"user": user, "part": part, "parts": parts})
+            names, albums = merged
         if not names:
             print(f"empty ingest for {user}: {length} bytes, {ctype!r}", flush=True)
             return self.send(400, {"error": "no artist names in body", "bytes": length, "content_type": ctype})

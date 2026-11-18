@@ -136,5 +136,21 @@ def test_album_plan():
     assert p["unmatched"] == ["Drake — Hotline Bling - Single", "SZA — Nope"]
 
 
+def test_add_part():
+    app.pending.clear()
+    assert app.add_part("me", 1, 3, ["A", "B"], [["A", "X"]]) is None
+    assert app.add_part("me", 2, 3, [], []) is None  # empty chunk is fine
+    assert app.add_part("me", 3, 3, ["b", "C"], [["a", "x"], ["C", "Y"]]) == (["A", "B", "C"], [["A", "X"], ["C", "Y"]])
+    assert "me" not in app.pending
+    app.add_part("me", 1, 3, ["A"], [])
+    try:
+        app.add_part("me", 3, 3, ["C"], [])  # part 2 never came: nothing is ingested
+        assert False
+    except ValueError:
+        pass
+    assert "me" not in app.pending
+    assert app.add_part("me", 1, 1, ["A"], []) == (["A"], [])
+
+
 if __name__ == "__main__":
-    test_parse_names(); test_pick(); test_split(); test_users(); test_ingest_history(); test_password(); test_totp(); test_cookies(); test_lockout(); test_setup_code(); test_parse_upload(); test_album_key(); test_album_plan(); print("ok")
+    test_parse_names(); test_pick(); test_split(); test_users(); test_ingest_history(); test_password(); test_totp(); test_cookies(); test_lockout(); test_setup_code(); test_parse_upload(); test_album_key(); test_album_plan(); test_add_part(); print("ok")

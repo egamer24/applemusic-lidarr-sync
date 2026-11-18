@@ -163,7 +163,7 @@ From there you can:
 
 | | Auth | |
 |---|---|---|
-| `POST /ingest` | user token, or API token + `?user=<name>` (default `default`) | Body: one artist per line, a JSON array, or `{"artists": [...]}`. Replaces that user's list |
+| `POST /ingest` | user token, or API token + `?user=<name>` (default `default`) | Body: one artist per line, a JSON array, or `{"artists": [...]}`. Replaces that user's list. Add `?part=<i>&parts=<n>` to send it in pieces: the list is replaced only when part *n* arrives, and a missing part cancels the upload |
 | `GET /list` | API token (or signed in) | Lidarr Custom List JSON, every user combined |
 | `GET /` | signed in | Web GUI (`/setup` on first run, `/login`, `/account`) |
 | `GET /shortcut` | none | The iPhone Shortcut |
@@ -275,7 +275,7 @@ Add each person in the web GUI and give them their own token. An upload only rep
 
 ## The iPhone Shortcut
 
-**Quick way:** on your iPhone, open the **[iCloud link](https://www.icloud.com/shortcuts/a183b4816810410580e26dd8f32e3818)** and tap **Add Shortcut**. The same Shortcut is in the repo ([`shortcut/Sync to Lidarr.shortcut`](shortcut/Sync%20to%20Lidarr.shortcut)) and served by your own container at `/shortcut`. It asks for one thing: your **setup code** from the web GUI (`<url>/ingest <token>`), and splits it into the address and token itself. It sends every album artist in your library; edit the **Find Music** action to narrow it down.
+**Quick way:** on your iPhone, open the **[iCloud link](https://www.icloud.com/shortcuts/a183b4816810410580e26dd8f32e3818)** and tap **Add Shortcut**. The same Shortcut is in the repo ([`shortcut/Sync to Lidarr.shortcut`](shortcut/Sync%20to%20Lidarr.shortcut)) and served by your own container at `/shortcut`. It asks for one thing: your **setup code** from the web GUI (`<url>/ingest <token>`), and splits it into the address and token itself. It sends every album artist in your library, reading and uploading 1,000 songs at a time so big libraries work too; edit the **Find Music** action to narrow it down.
 
 (`shortcut/build.py` generates it and the [album version](#only-the-albums-you-have-optional); sign on a Mac with `shortcuts sign --mode anyone`.)
 
@@ -290,6 +290,8 @@ Add each person in the web GUI and give them their own token. An upload only rep
    - Method: **POST**
    - Headers: `Authorization` = `Bearer <your token>`
    - Request Body: **File** → *Combined Text*
+
+This simple version fails on libraries bigger than about 2,500 songs (see the [FAQ](#faq)); the ready-made Shortcut sends big libraries in parts.
 
 </details>
 
@@ -352,6 +354,12 @@ No. App-specific passwords only work for iCloud mail, contacts and calendars, an
 <summary><strong>Android / Apple Music on Windows?</strong></summary>
 
 Not yet: it relies on iOS Shortcuts. Anything that can POST one artist name per line to `/ingest` with a token works, so other sources are possible.
+
+</details>
+<details>
+<summary><strong>The Shortcut fails with "There was a problem running the shortcut" and no other detail.</strong></summary>
+
+With a big library (reported at about 10,000 songs), Shortcuts runs out of room reading the artist of every song at once; the limit showed up around 2,500 songs. Since 1.3.0 the Shortcut reads and uploads 1,000 songs at a time. Get the new version from your container's `/shortcut` (or `/shortcut/albums`) after updating the container, delete the old one, and set up the automation again. The server needs 1.3.0 or later for this Shortcut.
 
 </details>
 <details>

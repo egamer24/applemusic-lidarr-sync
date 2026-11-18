@@ -2,11 +2,15 @@
 shortcuts sign --mode anyone -i shortcut/unsigned.shortcut -o "shortcut/Sync to Lidarr.shortcut"
 shortcuts sign --mode anyone -i shortcut/unsigned-albums.shortcut -o "shortcut/Sync to Lidarr (albums).shortcut"
 The albums version sends one "Album Artist<TAB>Album" line per song instead of just the artist.
+Songs are read and uploaded in chunks of CHUNK (?part=i&parts=n): Shortcuts fails reading the details of
+~2,500+ songs in one go (issue #1). The server only replaces the list once the last part arrives.
 """
 import plistlib, uuid, os
 
-SETUP, SPLIT, URL, TOKEN, FIND, ARTISTS, COMBINED, LINE, REPEAT = (str(uuid.uuid4()).upper() for _ in range(9))
-GROUP = str(uuid.uuid4()).upper()
+CHUNK = 1000  # songs per upload; the reported failure starts around 2,572
+(SETUP, SPLIT, URL, TOKEN, FIND, ARTISTS, COMBINED, LINE, REPEAT, COUNT, DIV, PARTS, PARTNO, MUL, START,
+ LASTEND, END, ENDNUM, CHUNKED) = (str(uuid.uuid4()).upper() for _ in range(19))
+GROUP, LOOP, IFG = (str(uuid.uuid4()).upper() for _ in range(3))
 
 
 def out(u, name):
@@ -41,11 +45,42 @@ setup = [
     # 4: all music in the library (add a filter in the Shortcuts app to narrow it)
     {"WFWorkflowActionIdentifier": "is.workflow.actions.filter.music",
      "WFWorkflowActionParameters": {"UUID": FIND}},
+    # parts = ceil(songs / CHUNK)
+    {"WFWorkflowActionIdentifier": "is.workflow.actions.count",
+     "WFWorkflowActionParameters": {"UUID": COUNT, "Input": var(FIND, "Music")}},
+    {"WFWorkflowActionIdentifier": "is.workflow.actions.math",
+     "WFWorkflowActionParameters": {"UUID": DIV, "WFInput": var(COUNT, "Count"), "WFMathOperation": "÷", "WFMathOperand": CHUNK}},
+    {"WFWorkflowActionIdentifier": "is.workflow.actions.round",
+     "WFWorkflowActionParameters": {"UUID": PARTS, "WFInput": var(DIV, "Calculation Result"), "WFRoundMode": "Always Round Up"}},
+    # for each part: songs (part-1)*CHUNK+1 .. min(part*CHUNK, songs)
+    {"WFWorkflowActionIdentifier": "is.workflow.actions.repeat.count",
+     "WFWorkflowActionParameters": {"GroupingIdentifier": LOOP, "WFControlFlowMode": 0, "WFRepeatCount": var(PARTS, "Rounded Number")}},
+    {"WFWorkflowActionIdentifier": "is.workflow.actions.number",
+     "WFWorkflowActionParameters": {"UUID": PARTNO, "WFNumberActionNumber": {"Value": {"Type": "Variable", "VariableName": "Repeat Index"}, "WFSerializationType": "WFTextTokenAttachment"}}},
+    {"WFWorkflowActionIdentifier": "is.workflow.actions.math",
+     "WFWorkflowActionParameters": {"UUID": MUL, "WFInput": var(PARTNO, "Number"), "WFMathOperation": "×", "WFMathOperand": CHUNK}},
+    {"WFWorkflowActionIdentifier": "is.workflow.actions.math",
+     "WFWorkflowActionParameters": {"UUID": START, "WFInput": var(MUL, "Calculation Result"), "WFMathOperation": "-", "WFMathOperand": CHUNK - 1}},
+    {"WFWorkflowActionIdentifier": "is.workflow.actions.conditional",
+     "WFWorkflowActionParameters": {"GroupingIdentifier": IFG, "WFControlFlowMode": 0, "WFCondition": 2,
+                                    "WFInput": {"Type": "Variable", "Variable": var(MUL, "Calculation Result")},
+                                    "WFNumberValue": var(COUNT, "Count")}},
+    {"WFWorkflowActionIdentifier": "is.workflow.actions.number",
+     "WFWorkflowActionParameters": {"UUID": LASTEND, "WFNumberActionNumber": var(COUNT, "Count")}},
+    {"WFWorkflowActionIdentifier": "is.workflow.actions.conditional",
+     "WFWorkflowActionParameters": {"GroupingIdentifier": IFG, "WFControlFlowMode": 1}},
+    {"WFWorkflowActionIdentifier": "is.workflow.actions.number",
+     "WFWorkflowActionParameters": {"UUID": ENDNUM, "WFNumberActionNumber": var(MUL, "Calculation Result")}},
+    {"WFWorkflowActionIdentifier": "is.workflow.actions.conditional",
+     "WFWorkflowActionParameters": {"GroupingIdentifier": IFG, "WFControlFlowMode": 2, "UUID": END}},
+    {"WFWorkflowActionIdentifier": "is.workflow.actions.getitemfromlist",
+     "WFWorkflowActionParameters": {"UUID": CHUNKED, "WFInput": var(FIND, "Music"), "WFItemSpecifier": "Items in Range",
+                                    "WFItemRangeStart": var(START, "Calculation Result"), "WFItemRangeEnd": var(END, "If Result")}},
 ]
 artists = [
     # 5: album artist of each song
     {"WFWorkflowActionIdentifier": "is.workflow.actions.properties.music",
-     "WFWorkflowActionParameters": {"UUID": ARTISTS, "WFInput": var(FIND, "Music"), "WFContentItemPropertyName": "Album Artist"}},
+     "WFWorkflowActionParameters": {"UUID": ARTISTS, "WFInput": var(CHUNKED, "Items in Range"), "WFContentItemPropertyName": "Album Artist"}},
     # 6: one per line
     {"WFWorkflowActionIdentifier": "is.workflow.actions.text.combine",
      "WFWorkflowActionParameters": {"UUID": COMBINED, "text": var(ARTISTS, "Album Artist"), "WFTextSeparator": "New Lines"}},
@@ -53,7 +88,7 @@ artists = [
 albums = [
     # 5-7: "Album Artist<TAB>Album" for each song, one per line
     {"WFWorkflowActionIdentifier": "is.workflow.actions.repeat.each",
-     "WFWorkflowActionParameters": {"GroupingIdentifier": GROUP, "WFControlFlowMode": 0, "WFInput": var(FIND, "Music")}},
+     "WFWorkflowActionParameters": {"GroupingIdentifier": GROUP, "WFControlFlowMode": 0, "WFInput": var(CHUNKED, "Items in Range")}},
     {"WFWorkflowActionIdentifier": "is.workflow.actions.gettext",
      "WFWorkflowActionParameters": {"UUID": LINE, "WFTextActionText": text("\ufffc\t\ufffc", {"{0, 1}": song("Album Artist"), "{2, 1}": song("Album")})}},
     {"WFWorkflowActionIdentifier": "is.workflow.actions.repeat.each",
@@ -65,7 +100,8 @@ post = [
     # POST to the URL from the setup code, with its token
     {"WFWorkflowActionIdentifier": "is.workflow.actions.downloadurl",
      "WFWorkflowActionParameters": {
-         "WFURL": text("\ufffc", {"{0, 1}": out(URL, "Item from List")}),
+         "WFURL": text("\ufffc?part=\ufffc&parts=\ufffc", {"{0, 1}": out(URL, "Item from List"),
+                                                       "{7, 1}": out(PARTNO, "Number"), "{15, 1}": out(PARTS, "Rounded Number")}),
          "WFHTTPMethod": "POST",
          "WFHTTPBodyType": "File",
          "WFRequestVariable": var(COMBINED, "Combined Text"),
@@ -76,6 +112,8 @@ post = [
              "WFValue": text("Bearer \ufffc", {"{7, 1}": out(TOKEN, "Item from List")}),
          }]}, "WFSerializationType": "WFDictionaryFieldValue"},
      }},
+    {"WFWorkflowActionIdentifier": "is.workflow.actions.repeat.count",
+     "WFWorkflowActionParameters": {"GroupingIdentifier": LOOP, "WFControlFlowMode": 2}},
 ]
 
 def shortcut(actions):
